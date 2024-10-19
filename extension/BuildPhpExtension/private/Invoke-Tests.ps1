@@ -87,6 +87,7 @@ Function Invoke-Tests {
                 if ($LASTEXITCODE -ne 0) {
                     $success = $False
                 }
+                Remove-Item 'C:\Windows\Temp\remote-log4.txt' -ErrorAction SilentlyContinue -Force
                 Set-GAGroup end
             }
             $env:TEMP = $tempOriginal
