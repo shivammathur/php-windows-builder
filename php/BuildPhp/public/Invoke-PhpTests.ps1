@@ -71,7 +71,7 @@ function Invoke-PhpTests {
 
         php `
             $settings.runner `
-            $settings.progress `
+            "--progress" `
             "-g" "FAIL,BORK,WARN,LEAK" `
             "-q" `
             "--offline" `
