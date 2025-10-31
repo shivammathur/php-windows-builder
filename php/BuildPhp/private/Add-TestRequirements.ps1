@@ -84,7 +84,11 @@ function Add-TestRequirements {
         $env:DEPS_DIR = "$currentDirectory/../deps"
         New-Item "$env:DEPS_DIR" -ItemType "directory" -Force > $null 2>&1
         $branch = if ($PhpVersion -eq 'master') {'master'} else {($PhpVersion -split '\.')[0..1] -join '.'}
-        & "$currentDirectory\php-sdk\bin\phpsdk_deps.bat" --update --no-backup --branch $branch --stability staging --deps $env:DEPS_DIR --crt $VsVersion --arch $Arch
+        $env:PHP_SDK_VS = $VsVersion
+        $env:PHP_SDK_ARCH = $Arch
+        Set-Content -Path deps.bat -Value "cmd /c phpsdk_deps --update --force --no-backup --branch $branch --stability staging --deps $env:DEPS_DIR"
+        & "$currentDirectory\php-sdk\phpsdk-starter.bat" -c $VsVersion -a $Arch -t deps.bat
+        Add-Path "$env:DEPS_DIR\bin"
 
         Set-MySqlTestEnvironment
         Set-PgSqlTestEnvironment
