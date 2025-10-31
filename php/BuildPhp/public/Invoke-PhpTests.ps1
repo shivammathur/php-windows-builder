@@ -40,8 +40,6 @@ function Invoke-PhpTests {
 
         $currentDirectory = (Get-Location).Path
 
-        Get-ChildItem $currentDirectory
-
         $tempDirectory = [System.IO.Path]::GetTempPath()
 
         $buildDirectory = [System.IO.Path]::Combine($tempDirectory, [System.Guid]::NewGuid().ToString())
