@@ -8,7 +8,7 @@ function Set-PgSqlTestEnvironment {
     process {
         $env:PGUSER = 'postgres'
         $env:PGPASSWORD = 'Password12!'
-        Set-Service -Name "postgresql-x64-14" -StartupType manual -Status Running
+        Set-Service -Name "postgresql-x64-14" -StartupType manual -Status Running -WarningAction SilentlyContinue
         $prevPgPwd = $env:PGPASSWORD
         $env:PGPASSWORD = 'root'
         & "$env:PGBIN\psql" -U postgres -c "ALTER USER $($env:PGUSER) WITH PASSWORD '$($prevPgPwd)';" | Out-Null
