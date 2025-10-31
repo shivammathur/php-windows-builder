@@ -364,7 +364,7 @@ To build PHP from a local source, run `Invoke-PhpBuild` from the source director
 Invoke-PhpBuild -Arch x64 -Ts nts
 ```
 
-It should produce the PGO optimized builds for the input PHP version and configuration in a directory named `artifacts` in the current directory.
+It should produce builds for the input PHP version and configuration in a directory named `artifacts` in the current directory.
 
 ### PHP Extensions
 
