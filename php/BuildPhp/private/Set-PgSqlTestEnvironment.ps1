@@ -11,7 +11,7 @@ function Set-PgSqlTestEnvironment {
         Set-Service -Name "postgresql-x64-14" -StartupType manual -Status Running
         $prevPgPwd = $env:PGPASSWORD
         $env:PGPASSWORD = 'root'
-        & "$env:PGBIN\psql" -U postgres -c "ALTER USER ${$env.PGUSER} WITH PASSWORD '$($prevPgPwd)';" | Out-Null
+        & "$env:PGBIN\psql" -U postgres -c "ALTER USER $($env:PGUSER) WITH PASSWORD '$($prevPgPwd)';" | Out-Null
         $env:PGPASSWORD = $prevPgPwd
         $env:PDO_PGSQL_TEST_DSN = "pgsql:host=127.0.0.1 port=5432 dbname=test user=$($env:PGUSER) password=$($env:PGPASSWORD)"
         if ($env:PGBIN) {
