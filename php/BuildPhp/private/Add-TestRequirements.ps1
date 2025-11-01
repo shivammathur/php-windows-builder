@@ -91,12 +91,12 @@ function Add-TestRequirements {
         Add-Path "$env:DEPS_DIR\bin"
 
         Set-MySqlTestEnvironment
-#        Set-PgSqlTestEnvironment
-#        Set-OdbcTestEnvironment
-#        Set-MsSqlTestEnvironment
-#        Set-FirebirdTestEnvironment
-#        Set-EnchantTestEnvironment
-#        Set-SnmpTestEnvironment -TestsDirectoryPath $testsDirectoryPath
+        Set-PgSqlTestEnvironment
+        Set-OdbcTestEnvironment
+        Set-MsSqlTestEnvironment
+        Set-FirebirdTestEnvironment
+        Set-EnchantTestEnvironment
+        Set-SnmpTestEnvironment -TestsDirectoryPath $testsDirectoryPath
     }
     end {
     }

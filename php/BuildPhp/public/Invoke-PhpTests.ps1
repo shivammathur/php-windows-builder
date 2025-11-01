@@ -79,8 +79,7 @@ function Invoke-PhpTests {
             "--show-slow" "1000" `
             "--set-timeout" "120" `
             "--temp-source" "$buildDirectory\tmp" `
-            "--temp-target" "$buildDirectory\tmp" `
-            "-r" "tests-to-run.txt"
+            "--temp-target" "$buildDirectory\tmp"
 
         Copy-Item "$buildDirectory\test-$Arch-$Ts-$Opcache.xml" $currentDirectory
 
