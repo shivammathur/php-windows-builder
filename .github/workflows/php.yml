@@ -6,6 +6,9 @@ on:
       php-version:
         description: 'PHP version to build'
         required: true
+      libs-build-runs:
+        description: 'Comma-separated list of GitHub Actions run IDs from winlibs/winlib-builder'
+        required: false
       upload:
         type: choice
         options: ['true', 'false']
@@ -30,6 +33,7 @@ jobs:
           php-version: ${{ inputs.php-version }}
           arch: ${{ matrix.arch }}
           ts: ${{ matrix.ts }}
+          libs-build-runs: ${{ inputs.libs-build-runs }}
         env:
           PHP_BUILD_PROVIDER: "The PHP Group"
 

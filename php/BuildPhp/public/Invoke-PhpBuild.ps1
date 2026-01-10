@@ -59,6 +59,16 @@ function Invoke-PhpBuild {
         New-Item "..\obj" -ItemType "directory" > $null 2>&1
         Copy-Item "..\config.$Ts.bat"
 
+        # Normalize PHP version for deps (e.g., "8.4.16" -> "8.4", "master" stays "master")
+        $depsPhpVersion = $PhpVersion
+        if ($PhpVersion -ne 'master') {
+            $depsPhpVersion = $PhpVersion.Split('.')[0..1] -join '.'
+        }
+
+        # Add PHP dependencies
+        $depsDir = "$buildPath\..\deps"
+        Add-PhpDeps -PhpVersion $depsPhpVersion -VsVersion $VsConfig.vs -Arch $Arch -Destination $depsDir
+
         $task = "$PSScriptRoot\..\runner\task-$Ts.bat"
 
         & "$buildDirectory\php-sdk\phpsdk-starter.bat" -c $VsConfig.vs -a $Arch -s $VsConfig.toolset -t $task

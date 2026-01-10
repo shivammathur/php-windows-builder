@@ -67,6 +67,7 @@
         'Add-TestRequirements',
         'Add-Vs',
         'Get-File',
+        'Get-LibsBuildDeps',
         'Get-OciSdk',
         'Get-PhpBuild',
         'Get-PhpDeps',
