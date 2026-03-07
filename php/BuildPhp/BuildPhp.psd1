@@ -91,6 +91,7 @@
         'Set-SnmpTestEnvironment',
 
         # Public functions
+        'Invoke-FrankenPhpBuild',
         'Invoke-PhpBuild',
         'Invoke-PhpSmokeTests',
         'Invoke-PhpTests'

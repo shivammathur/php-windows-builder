@@ -33,9 +33,47 @@ jobs:
         env:
           PHP_BUILD_PROVIDER: "The PHP Group"
 
+  frankenphp:
+    strategy:
+      matrix:
+        arch: [x64, x86]
+    runs-on: windows-2022
+    needs: php
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.26'
+          check-latest: true
+
+      - name: Download TS artifacts
+        uses: actions/download-artifact@v5
+        with:
+          name: artifacts-${{ inputs.php-version }}-${{ matrix.arch }}-ts
+          path: artifacts
+
+      - name: Build FrankenPHP
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          Import-Module (Join-Path $(pwd).Path '\php\BuildPhp') -Force
+          Invoke-FrankenPhpBuild -PhpVersion ${{inputs.php-version}} `
+                                 -Arch ${{matrix.arch}} `
+                                 -ArtifactsDirectory (Join-Path $(pwd).Path 'artifacts')
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v5
+        with:
+          name: artifacts-${{inputs.php-version}}-${{matrix.arch}}-franken
+          path: artifacts/*franken*.zip
+
   artifacts:
     runs-on: ubuntu-latest
-    needs: php
+    needs: [php, frankenphp]
     outputs:
       artifact-id: ${{ steps.artifacts.outputs.artifact-id }}
     steps:
