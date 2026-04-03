@@ -22,11 +22,11 @@ inputs:
   php-sdk-repository:
     description: GitHub repository for the PHP SDK source archive
     required: false
-    default: php/php-sdk-binary-tools
+    default: shivammathur/php-sdk-binary-tools
   php-sdk-ref:
     description: Git reference for the PHP SDK source archive
     required: false
-    default: php-sdk-2.6.0
+    default: codex/pgo-case-revival
   pgo-cases:
     description: Comma-separated PGO training cases to run during initialization and training
     required: false
