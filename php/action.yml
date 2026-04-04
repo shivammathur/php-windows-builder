@@ -30,12 +30,15 @@ inputs:
   pgo-cases:
     description: Comma-separated PGO training cases to run during initialization and training
     required: false
+    default: pgo01org,symfony_demo,cli,jit
   pgo-default-cases:
     description: Comma-separated PGO training cases to run for the default scenario
     required: false
+    default: pgo01org,symfony_demo,cli
   pgo-cache-cases:
     description: Comma-separated PGO training cases to run for the cache scenario
     required: false
+    default: jit,symfony_demo
   github-token:
     description: GitHub token for accessing private repositories
     required: false
