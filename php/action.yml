@@ -19,6 +19,14 @@ inputs:
   libs-build-runs:
     description: Comma-separated list of GitHub Actions run IDs from winlibs/winlib-builder to download artifacts from
     required: false
+  php-src-repository:
+    description: GitHub repository for the PHP source archive
+    required: false
+    default: php/php-src
+  php-src-ref:
+    description: Optional Git reference for the PHP source archive
+    required: false
+    default: ""
   github-token:
     description: GitHub token for accessing private repositories
     required: false
@@ -31,6 +39,8 @@ runs:
       shell: pwsh
       env:
         LIBS_BUILD_RUNS: ${{ inputs.libs-build-runs }}
+        PHP_SRC_REPOSITORY: ${{ inputs.php-src-repository }}
+        PHP_SRC_REF: ${{ inputs.php-src-ref }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
       run: |
         Import-Module ${{ github.action_path }}\BuildPhp -Force
