@@ -30,6 +30,12 @@ inputs:
   pgo-cases:
     description: Comma-separated PGO training cases to run during initialization and training
     required: false
+  pgo-default-cases:
+    description: Comma-separated PGO training cases to run for the default scenario
+    required: false
+  pgo-cache-cases:
+    description: Comma-separated PGO training cases to run for the cache scenario
+    required: false
   github-token:
     description: GitHub token for accessing private repositories
     required: false
@@ -45,6 +51,8 @@ runs:
         PHP_SDK_REPOSITORY: ${{ inputs.php-sdk-repository }}
         PHP_SDK_REF: ${{ inputs.php-sdk-ref }}
         PHP_SDK_PGO_CASES: ${{ inputs.pgo-cases }}
+        PHP_SDK_PGO_DEFAULT_CASES: ${{ inputs.pgo-default-cases }}
+        PHP_SDK_PGO_CACHE_CASES: ${{ inputs.pgo-cache-cases }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
       run: |
         Import-Module ${{ github.action_path }}\BuildPhp -Force
