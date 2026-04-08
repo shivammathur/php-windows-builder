@@ -17,7 +17,18 @@ function Invoke-CompatRunTestsPatch {
         [string] $PatchPath
     )
     begin {
-        function Get-PatchExecutable {
+        function Get-CompatPatchExecutable {
+            $patchCommand = Get-Command patch -ErrorAction SilentlyContinue
+            if ($null -ne $patchCommand) {
+                if ($null -ne $patchCommand.Source -and $patchCommand.Source -ne '') {
+                    return $patchCommand.Source
+                }
+
+                if ($null -ne $patchCommand.Path -and $patchCommand.Path -ne '') {
+                    return $patchCommand.Path
+                }
+            }
+
             $gitCommand = Get-Command git -ErrorAction SilentlyContinue
             if ($null -eq $gitCommand) {
                 return $null
@@ -44,27 +55,14 @@ function Invoke-CompatRunTestsPatch {
         }
     }
     process {
-        $patchExecutable = Get-PatchExecutable
+        $patchExecutable = Get-CompatPatchExecutable
         if ($null -eq $patchExecutable) {
             return $false
         }
 
         $targetDirectory = Split-Path -Path $Path -Parent
-        $targetFileName = Split-Path -Path $Path -Leaf
-
-        & $patchExecutable -N -s -d $targetDirectory -i $PatchPath
-        $exitCode = $LASTEXITCODE
-
-        $rejectFile = Join-Path $targetDirectory "$targetFileName.rej"
-        $originalFile = Join-Path $targetDirectory "$targetFileName.orig"
-        if (Test-Path -Path $rejectFile) {
-            Remove-Item -Path $rejectFile -Force
-        }
-        if (Test-Path -Path $originalFile) {
-            Remove-Item -Path $originalFile -Force
-        }
-
-        return $exitCode -eq 0
+        & $patchExecutable -N -s -V never -r - -d $targetDirectory -i $PatchPath
+        return $LASTEXITCODE -eq 0
     }
     end {
     }

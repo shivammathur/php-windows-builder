@@ -39,9 +39,7 @@ function Get-PhpSrc {
         [System.IO.Compression.ZipFile]::ExtractToDirectory($zipFilePath, $currentDirectory)
         Rename-Item -Path "php-src-$ref" -NewName $directory
 
-        if ($PhpVersion -match '^7\.2\.\d+$') {
-            Set-Content -Path (Join-Path $directoryPath 'win32/build/mkdist.php') -Value ((Get-Content -Raw -Path (Join-Path $directoryPath 'win32/build/mkdist.php')).Replace('$hdr_data{$i}', '$hdr_data[$i]')) -NoNewline
-        }
+        Add-PhpSourcePatches -PhpVersion $PhpVersion -SourceDirectory $directoryPath > $null
 
         [System.IO.Compression.ZipFile]::CreateFromDirectory($directoryPath, $srcZipFilePath)
     }

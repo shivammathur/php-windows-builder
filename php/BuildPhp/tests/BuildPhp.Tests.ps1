@@ -50,4 +50,33 @@ Describe "$ModuleName Module - Testing Manifest File (.psd1)" {
     }
 }
 
+Describe "$ModuleName Module - PHP source patches" {
+    Context "Patch file discovery" {
+        It "Finds configured series patches for patch releases" {
+            $patches = @(Get-PhpSourcePatchFiles -PhpVersion '7.2.34')
+
+            $patches.Count | Should Be 1
+            $patches[0].Name | Should Be '0001-fix-mkdist-string-offsets.patch'
+        }
+
+        It "Finds configured curl patch for PHP 8.4" {
+            $patches = @(Get-PhpSourcePatchFiles -PhpVersion '8.4.11')
+
+            $patches.Count | Should Be 1
+            $patches[0].Name | Should Be '0001-curl-add-brotli-and-zstd-on-windows.patch'
+        }
+
+        It "Finds configured curl patch for PHP 8.5" {
+            $patches = @(Get-PhpSourcePatchFiles -PhpVersion '8.5.5')
+
+            $patches.Count | Should Be 1
+            $patches[0].Name | Should Be '0001-curl-add-brotli-and-zstd-on-windows.patch'
+        }
+
+        It "Returns no patch files when a series has no configured patches" {
+            @(Get-PhpSourcePatchFiles -PhpVersion '8.3.23').Count | Should Be 0
+        }
+    }
+}
+
 Get-Module -Name $ModuleName | Remove-Module

@@ -63,6 +63,7 @@
     FunctionsToExport = @(
         # Private functions (sorted)
         'Add-BuildRequirements',
+        'Add-PhpSourcePatches',
         'Add-Path',
         'Add-PhpDeps',
         'Add-TestRequirements',
@@ -73,6 +74,7 @@
         'Get-PhpBuild',
         'Get-PhpSdk',
         'Get-PhpSrc',
+        'Get-PhpSourcePatchFiles',
         'Get-PhpTestPack',
         'Get-SourcePhpVersion',
         'Get-TestSettings',

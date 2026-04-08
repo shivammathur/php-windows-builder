@@ -1,0 +1,30 @@
+--- ext/curl/config.w32
++++ ext/curl/config.w32
+@@ -12,7 +12,10 @@
+ 		SETUP_ZLIB_LIB("curl", PHP_CURL) &&
+ 		(CHECK_LIB("normaliz.lib", "curl", PHP_CURL) &&
+ 		 CHECK_LIB("libssh2.lib", "curl", PHP_CURL) &&
+-		 CHECK_LIB("nghttp2.lib", "curl", PHP_CURL))
++		 CHECK_LIB("nghttp2.lib", "curl", PHP_CURL) &&
++		 CHECK_LIB("brotlidec.lib", "curl", PHP_CURL) &&
++		 CHECK_LIB("brotlicommon.lib", "curl", PHP_CURL) &&
++		 CHECK_LIB("libzstd.lib", "curl", PHP_CURL))
+ 		) {
+ 		EXTENSION("curl", "interface.c multi.c share.c curl_file.c");
+ 		AC_DEFINE('HAVE_CURL', 1, "Define to 1 if the PHP extension 'curl' is available.");
+--- ext/curl/tests/check_win_config.phpt
++++ ext/curl/tests/check_win_config.phpt
+@@ -47,11 +47,11 @@
+ PSL => No
+ HTTPS_PROXY => Yes
+ MULTI_SSL => %s
+-BROTLI => %s
++BROTLI => Yes
+ ALTSVC => Yes
+ HTTP3 => No
+ UNICODE => No
+-ZSTD => No
++ZSTD => Yes
+ HSTS => Yes
+ GSASL => No
+ Protocols => dict, file, ftp, ftps, gopher, %r(gophers, )?%rhttp, https, imap, imaps, ldap, ldaps, %r(mqtt, )?%rpop3, pop3s, rtsp, scp, sftp, smb, smbs, smtp, smtps, telnet, tftp%r(, ws)?(, wss)?%r
