@@ -1,0 +1,75 @@
+// vim:ft=javascript
+
+var DS_EXT_NAME="ds";
+var DS_EXT_DIR=configure_module_dirname + "/src";
+var DS_EXT_API="php_ds.c";
+var DS_EXT_FLAGS="/DZEND_ENABLE_STATIC_TSRMLS_CACHE=1 /I" + configure_module_dirname;
+
+function ds_src(dir, files) {
+    return ADD_SOURCES(
+        DS_EXT_DIR + dir,
+        files.join(" "),
+        DS_EXT_NAME
+    );
+}
+
+////////////////////////////////////
+ARG_ENABLE("ds", "for extended data structure support", "no");
+
+if (PHP_DS != "no") {
+    EXTENSION(DS_EXT_NAME, DS_EXT_API, PHP_DS_SHARED, DS_EXT_FLAGS);
+
+    ds_src("/",
+    [
+        "common.c"
+    ]);
+
+    ds_src("/ds",
+    [
+        "ds_seq.c",
+        "ds_htable.c",
+        "ds_set.c",
+        "ds_map.c",
+        "ds_heap.c",
+    ]);
+
+    ds_src("/php/objects",
+    [
+        "php_seq.c",
+        "php_map.c",
+        "php_pair.c",
+        "php_heap.c",
+        "php_set.c",
+    ]);
+
+    ds_src("/php/iterators",
+    [
+        "php_seq_iterator.c",
+        "php_set_iterator.c",
+        "php_map_iterator.c",
+        "php_htable_iterator.c",
+        "php_heap_iterator.c",
+    ]);
+
+    ds_src("/php/handlers",
+    [
+        "php_common_handlers.c",
+        "php_seq_handlers.c",
+        "php_set_handlers.c",
+        "php_map_handlers.c",
+        "php_pair_handlers.c",
+        "php_heap_handlers.c",
+    ]);
+
+    ds_src("/php/classes",
+    [
+        "php_key_ce.c",
+        "php_seq_ce.c",
+        "php_set_ce.c",
+        "php_map_ce.c",
+        "php_pair_ce.c",
+        "php_heap_ce.c",
+    ]);
+
+    ADD_EXTENSION_DEP('ds', 'spl');
+}
