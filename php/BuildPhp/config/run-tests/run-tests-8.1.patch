@@ -1,6 +1,6 @@
 --- run-tests.php
 +++ run-tests.php
-@@ -143,6 +143,278 @@
+@@ -143,6 +143,275 @@
   * code that was previously found at the top level. It could and should be
   * refactored to be smaller and more manageable.
   */
@@ -121,6 +121,7 @@
 +        }
 +
 +        $workerBatches[$workerID]['current'] = [
++            'assigned_name' => $assignedName,
 +            'name' => $name,
 +            'index' => $index,
 +        ];
@@ -138,6 +139,13 @@
 +                    unset($waitingTests[$key]);
 +                }
 +            }
++        }
++    }
++
++    function buildphp_worker_recovery_enqueue_retry(array &$retryTests, $name)
++    {
++        if (buildphp_worker_recovery_find_test_index($retryTests, $name) === null) {
++            $retryTests[] = $name;
 +        }
 +    }
 +
@@ -197,10 +205,6 @@
 +            "constants" => [
 +                "INIT_DIR" => INIT_DIR,
 +                "TEST_PHP_SRCDIR" => TEST_PHP_SRCDIR,
-+                "PHP_QA_EMAIL" => PHP_QA_EMAIL,
-+                "QA_SUBMISSION_PAGE" => QA_SUBMISSION_PAGE,
-+                "QA_REPORTS_PAGE" => QA_REPORTS_PAGE,
-+                "TRAVIS_CI" => TRAVIS_CI
 +            ]
 +        ])) . "\n";
 +
@@ -234,7 +238,7 @@
 +        return true;
 +    }
 +
-+    function buildphp_worker_recovery_handle_worker_death($workerID, &$workerProcs, &$workerSocks, &$workerBatches, &$rawMessageBuffers, &$activeConflicts, &$waitingTests, &$test_files, &$testsInProgress, &$PHP_FAILED_TESTS, &$test_results, $result_tests_file, $listenSock, $thisPHP, $thisScript, $workerEnv, $sockUri)
++    function buildphp_worker_recovery_handle_worker_death($workerID, &$workerProcs, &$workerSocks, &$workerBatches, &$rawMessageBuffers, &$activeConflicts, &$waitingTests, &$test_files, &$retryTests, &$testsInProgress, $listenSock, $thisPHP, $thisScript, $workerEnv, $sockUri)
 +    {
 +        $hadBatch = isset($workerBatches[$workerID]);
 +        if ($hadBatch) {
@@ -243,18 +247,11 @@
 +
 +            $currentTest = $workerBatches[$workerID]['current'];
 +            if ($currentTest !== null) {
-+                buildphp_worker_recovery_mark_bork(
-+                    $currentTest['name'],
-+                    $currentTest['index'],
-+                    "Worker $workerID died unexpectedly",
-+                    $PHP_FAILED_TESTS,
-+                    $test_results,
-+                    $result_tests_file
-+                );
++                buildphp_worker_recovery_enqueue_retry($retryTests, $currentTest['assigned_name']);
 +            }
 +
 +            foreach ($workerBatches[$workerID]['pending'] as $pendingTest) {
-+                $test_files[] = $pendingTest;
++                buildphp_worker_recovery_enqueue_retry($retryTests, $pendingTest);
 +            }
 +        }
 +
@@ -279,9 +276,9 @@
  function main(): void
  {
      /* This list was derived in a naïve mechanical fashion. If a member
-@@ -1357,22 +1629,20 @@
+@@ -1370,22 +1638,20 @@
      }
- 
+
      foreach ($test_files as $name) {
 -        if (is_array($name)) {
 -            $index = "# $name[1]: $name[0]";
@@ -298,7 +295,7 @@
 +        $index = buildphp_worker_recovery_format_test_index($name, $redir_tested);
 +        $name = buildphp_worker_recovery_get_result_test_name($name, $redir_tested);
          $test_idx++;
- 
+
          if ($workerID) {
              $PHP_FAILED_TESTS = ['BORKED' => [], 'FAILED' => [], 'WARNED' => [], 'LEAKED' => [], 'XFAILED' => [], 'XLEAKED' => [], 'SLOW' => []];
              ob_start();
@@ -309,9 +306,9 @@
 +                "index" => $index,
 +            ]);
          }
- 
+
          $result = run_test($php, $name, $env);
-@@ -1384,12 +1654,15 @@
+@@ -1397,12 +1663,15 @@
              if ($workerID) {
                  send_message($workerSock, [
                      "type" => "test_result",
@@ -327,30 +324,34 @@
 +                buildphp_worker_recovery_reset_junit();
                  continue;
              }
- 
-@@ -1420,6 +1693,7 @@
- 
+
+@@ -1433,6 +1702,8 @@
+
      $workerProcs = [];
      $workerSocks = [];
 +    $workerBatches = [];
- 
++    $workerCrashRetryTests = [];
+
      // Each test may specify a list of conflict keys. While a test that conflicts with
      // key K is running, no other test that conflicts with K may run. Conflict keys are
-@@ -1565,6 +1839,23 @@
- 
+@@ -1533,10 +1803,6 @@
+             "constants" => [
+                 "INIT_DIR" => INIT_DIR,
+                 "TEST_PHP_SRCDIR" => TEST_PHP_SRCDIR,
+-                "PHP_QA_EMAIL" => PHP_QA_EMAIL,
+-                "QA_SUBMISSION_PAGE" => QA_SUBMISSION_PAGE,
+-                "QA_REPORTS_PAGE" => QA_REPORTS_PAGE,
+-                "TRAVIS_CI" => TRAVIS_CI
+             ]
+         ])) . "\n";
+
+@@ -1578,6 +1844,15 @@
+
  escape:
      while ($test_files || $sequentialTests || $testsInProgress > 0) {
 +        if (!$workerSocks) {
 +            foreach (array_merge($test_files, $sequentialTests) as $pendingTest) {
-+                $test_idx++;
-+                buildphp_worker_recovery_mark_bork(
-+                    buildphp_worker_recovery_get_result_test_name($pendingTest, $redir_tested),
-+                    buildphp_worker_recovery_format_test_index($pendingTest, $redir_tested),
-+                    'All parallel workers died unexpectedly',
-+                    $PHP_FAILED_TESTS,
-+                    $test_results,
-+                    $result_tests_file
-+                );
++                buildphp_worker_recovery_enqueue_retry($workerCrashRetryTests, $pendingTest);
 +            }
 +            $test_files = [];
 +            $sequentialTests = [];
@@ -360,7 +361,7 @@
          $toRead = array_values($workerSocks);
          $toWrite = null;
          $toExcept = null;
-@@ -1574,6 +1865,28 @@
+@@ -1587,6 +1870,26 @@
                  if ($i === false) {
                      kill_children($workerProcs);
                      error("Could not find worker stdout in array of worker stdouts, THIS SHOULD NOT HAPPEN.");
@@ -375,10 +376,8 @@
 +                        $activeConflicts,
 +                        $waitingTests,
 +                        $test_files,
++                        $workerCrashRetryTests,
 +                        $testsInProgress,
-+                        $PHP_FAILED_TESTS,
-+                        $test_results,
-+                        $result_tests_file,
 +                        $listenSock,
 +                        $thisPHP,
 +                        $thisScript,
@@ -387,10 +386,10 @@
 +                    );
 +                    continue;
                  }
-                 while (false !== ($rawMessage = fgets($workerSock))) {
-                     // work around fgets truncating things
-@@ -1595,19 +1908,12 @@
- 
+                 if (feof($workerSock)) {
+                     kill_children($workerProcs);
+@@ -1612,19 +1917,12 @@
+
                      switch ($message["type"]) {
                          case "tests_finished":
 -                            $testsInProgress--;
@@ -414,7 +413,7 @@
                              // no break
                          case "ready":
                              // Schedule sequential tests only once we are down to one worker.
-@@ -1640,6 +1946,10 @@
+@@ -1657,6 +1955,10 @@
                                      }
                                  }
                                  $testsInProgress++;
@@ -425,7 +424,7 @@
                                  send_message($workerSocks[$i], [
                                      "type" => "run_tests",
                                      "test_files" => $files,
-@@ -1648,13 +1958,20 @@
+@@ -1665,13 +1967,20 @@
                                  ]);
                              } else {
                                  proc_terminate($workerProcs[$i]);
@@ -448,7 +447,20 @@
                              foreach ($message["PHP_FAILED_TESTS"] as $category => $tests) {
                                  $PHP_FAILED_TESTS[$category] = array_merge($PHP_FAILED_TESTS[$category], $tests);
                              }
-@@ -1796,9 +2113,9 @@
+@@ -1735,4 +2040,12 @@
+
+     kill_children($workerProcs);
+
++    if ($workerCrashRetryTests) {
++        echo "Retrying " . count($workerCrashRetryTests) . " tests interrupted by worker crashes serially...\n";
++        $savedWorkers = $workers;
++        $workers = null;
++        run_all_tests($workerCrashRetryTests, $env, $redir_tested);
++        $workers = $savedWorkers;
++    }
++
+     if ($testsInProgress < 0) {
+@@ -1813,9 +2122,9 @@
                  run_all_tests($command["test_files"], $command["env"], $command["redir_tested"]);
                  send_message($workerSock, [
                      "type" => "tests_finished",
@@ -460,20 +472,20 @@
                  break;
              default:
                  send_message($workerSock, [
-@@ -3481,6 +3798,8 @@
+@@ -3571,6 +3880,8 @@
          }
- 
+
          $suite = $this->getSuiteName($file_name);
 +        $this->initSuite($suite);
 +        $this->suites[$suite]['files'][$file_name] = $file_name;
- 
+
          $this->record($suite, 'test_total');
- 
-@@ -3529,6 +3848,7 @@
+
+@@ -3619,6 +3930,7 @@
      private function record(string $suite, string $param, $value = 1): void
      {
          $this->rootSuite[$param] += $value;
 +        $this->initSuite($suite);
          $this->suites[$suite][$param] += $value;
      }
- 
+

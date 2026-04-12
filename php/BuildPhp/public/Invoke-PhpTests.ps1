@@ -53,15 +53,20 @@ function Invoke-PhpTests {
 
         $currentDirectory = (Get-Location).Path
 
-        $tempDirectory = [System.IO.Path]::GetTempPath()
+        $tempDirectory = if ([string]::IsNullOrWhiteSpace($env:SystemDrive)) {
+            [System.IO.Path]::GetTempPath()
+        } else {
+            "$($env:SystemDrive)\"
+        }
 
-        $buildDirectory = [System.IO.Path]::Combine($tempDirectory, ("php-" + [System.Guid]::NewGuid().ToString()))
+        $buildDirectory = Join-Path $tempDirectory ("php-" + [System.Guid]::NewGuid().ToString())
+        $tempDirectory = Join-Path $tempDirectory 'tests_tmp'
 
         $testsDirectory = "tests"
 
         New-Item "$buildDirectory" -ItemType "directory" -Force > $null 2>&1
 
-        New-Item "$buildDirectory\tmp" -ItemType "directory" -Force > $null 2>&1
+        New-Item "$tempDirectory" -ItemType "directory" -Force > $null 2>&1
 
         Set-Location "$buildDirectory"
 
@@ -74,7 +79,7 @@ function Invoke-PhpTests {
                                           -SourceRepository $SourceRepository `
                                           -SourceRef $SourceRef
 
-        Set-PhpIniForTests -BuildDirectory $buildDirectory -Opcache $Opcache
+        Set-PhpIniForTests -BuildDirectory $buildDirectory -Opcache $Opcache -TestType $TestType
 
         $Env:Path = "$buildDirectory\phpbin;$Env:Path"
         $Env:TEST_PHP_EXECUTABLE = "$buildDirectory\phpbin\php.exe"
@@ -103,18 +108,19 @@ function Invoke-PhpTests {
             Set-SnmpTestEnvironment -TestsDirectoryPath "$buildDirectory\$testsDirectory"
         }
 
-        $testTimeout = "120"
-        if($TestType -eq "ext") {
-            $testTimeout = "300"
-        }
+        $testTimeout = if ($TestType -eq 'ext') { '300' } else { '120' }
 
         $testResultFile = "$buildDirectory\test-$Arch-$Ts-$Opcache-$TestType.xml"
         $testLogFile = "$buildDirectory\test-$Arch-$Ts-$Opcache-$TestType.log"
 
         $params = @(
+            "-n",
             "-d", "open_basedir=",
             "-d", "output_buffering=0",
             $settings.runner,
+            "-p", "$buildDirectory\phpbin\php.exe",
+            "-n",
+            "-c", "$buildDirectory\phpbin\php.ini",
             $settings.progress,
             "-g", "FAIL,BORK,WARN,LEAK",
             "-q",
@@ -122,8 +128,8 @@ function Invoke-PhpTests {
             "--show-diff",
             "--show-slow", "1000",
             "--set-timeout", $testTimeout,
-            "--temp-source", "$buildDirectory\tmp",
-            "--temp-target", "$buildDirectory\tmp",
+            "--temp-source", $tempDirectory,
+            "--temp-target", $tempDirectory,
             "-r", "$TestType-tests-to-run.txt"
         )
 

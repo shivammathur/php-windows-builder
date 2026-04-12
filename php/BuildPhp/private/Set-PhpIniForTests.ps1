@@ -6,6 +6,8 @@ function Set-PhpIniForTests {
         Build directory
     .PARAMETER Opcache
         Opcache
+    .PARAMETER TestType
+        Test type
     #>
     [OutputType()]
     param (
@@ -15,15 +17,19 @@ function Set-PhpIniForTests {
         [string] $BuildDirectory,
         [Parameter(Mandatory = $true, Position=1, HelpMessage='Specify Cache')]
         [ValidateSet('nocache', 'opcache')]
-        [string] $Opcache
+        [string] $Opcache,
+        [Parameter(Mandatory = $true, Position=2, HelpMessage='Test type')]
+        [ValidateSet('ext', 'php')]
+        [string] $TestType
     )
     begin {
     }
     process {
-        $ini = "$BuildDirectory\phpbin\php.ini"
-        Copy-Item "$PSScriptRoot\..\config\ini\extensions.ini" $ini
+        $ini = Join-Path $BuildDirectory 'phpbin\php.ini'
+        $iniTemplate = Join-Path $PSScriptRoot "..\config\ini\$TestType.ini"
+        Copy-Item $iniTemplate $ini -Force
         Add-Content $ini "extension_dir=$BuildDirectory\phpbin\ext"
-        Add-Content $ini "memory_limit=-1"
+
         if ($Opcache -eq "opcache") {
             New-Item "$BuildDirectory/file_cache" -ItemType "directory" > $null 2>&1
             $opcacheIni = Get-Content "$PSScriptRoot\..\config\ini\opcache-$Arch.ini" -Raw
