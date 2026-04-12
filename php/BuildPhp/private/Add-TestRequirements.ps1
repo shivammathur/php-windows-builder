@@ -105,6 +105,8 @@ function Add-TestRequirements {
             }
         }
 
+        Add-WindowsTestHelpers -TestsDirectoryPath $testsDirectoryPath -Arch $Arch
+
         $compatPatchApplied = $true
         $testSettings = Get-TestSettings -PhpVersion $compatVersion
         $compatPatchName = if ($testSettings.PSObject.Properties.Name -contains 'compatPatch') { $testSettings.compatPatch } else { '' }
