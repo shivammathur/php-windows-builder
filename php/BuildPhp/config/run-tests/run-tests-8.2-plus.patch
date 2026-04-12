@@ -1,6 +1,6 @@
 --- run-tests.php
 +++ run-tests.php
-@@ -146,6 +146,278 @@
+@@ -140,6 +140,274 @@
   * code that was previously found at the top level. It could and should be
   * refactored to be smaller and more manageable.
   */
@@ -197,10 +197,6 @@
 +            "constants" => [
 +                "INIT_DIR" => INIT_DIR,
 +                "TEST_PHP_SRCDIR" => TEST_PHP_SRCDIR,
-+                "PHP_QA_EMAIL" => PHP_QA_EMAIL,
-+                "QA_SUBMISSION_PAGE" => QA_SUBMISSION_PAGE,
-+                "QA_REPORTS_PAGE" => QA_REPORTS_PAGE,
-+                "TRAVIS_CI" => TRAVIS_CI
 +            ]
 +        ])) . "\n";
 +
@@ -279,9 +275,9 @@
  function main(): void
  {
      /* This list was derived in a naïve mechanical fashion. If a member
-@@ -1289,22 +1561,20 @@
+@@ -1285,22 +1553,20 @@
      }
- 
+
      foreach ($test_files as $name) {
 -        if (is_array($name)) {
 -            $index = "# $name[1]: $name[0]";
@@ -298,7 +294,7 @@
 +        $index = buildphp_worker_recovery_format_test_index($name, $redir_tested);
 +        $name = buildphp_worker_recovery_get_result_test_name($name, $redir_tested);
          $test_idx++;
- 
+
          if ($workerID) {
              $PHP_FAILED_TESTS = ['BORKED' => [], 'FAILED' => [], 'WARNED' => [], 'LEAKED' => [], 'XFAILED' => [], 'XLEAKED' => [], 'SLOW' => []];
              ob_start();
@@ -309,9 +305,9 @@
 +                "index" => $index,
 +            ]);
          }
- 
+
          $result = run_test($php, $name, $env);
-@@ -1316,12 +1586,15 @@
+@@ -1312,12 +1578,15 @@
              if ($workerID) {
                  send_message($workerSock, [
                      "type" => "test_result",
@@ -327,17 +323,17 @@
 +                buildphp_worker_recovery_reset_junit();
                  continue;
              }
- 
-@@ -1352,6 +1625,7 @@
- 
+
+@@ -1345,6 +1614,7 @@
+
      $workerProcs = [];
      $workerSocks = [];
 +    $workerBatches = [];
- 
+
      // Each test may specify a list of conflict keys. While a test that conflicts with
      // key K is running, no other test that conflicts with K may run. Conflict keys are
-@@ -1494,6 +1768,23 @@
- 
+@@ -1486,6 +1756,23 @@
+
  escape:
      while ($test_files || $sequentialTests || $testsInProgress > 0) {
 +        if (!$workerSocks) {
@@ -360,12 +356,10 @@
          $toRead = array_values($workerSocks);
          $toWrite = null;
          $toExcept = null;
-@@ -1503,6 +1794,28 @@
-                 if ($i === false) {
-                     kill_children($workerProcs);
+@@ -1497,6 +1784,28 @@
                      error("Could not find worker stdout in array of worker stdouts, THIS SHOULD NOT HAPPEN.");
-+                }
-+                if (feof($workerSock)) {
+                 }
+                 if (feof($workerSock)) {
 +                    buildphp_worker_recovery_handle_worker_death(
 +                        $i,
 +                        $workerProcs,
@@ -386,11 +380,13 @@
 +                        $sockUri
 +                    );
 +                    continue;
++                }
++                if (feof($workerSock)) {
+                     kill_children($workerProcs);
+                     error("Worker $i died unexpectedly");
                  }
-                 while (false !== ($rawMessage = fgets($workerSock))) {
-                     // work around fgets truncating things
-@@ -1524,19 +1837,12 @@
- 
+@@ -1520,19 +1829,12 @@
+
                      switch ($message["type"]) {
                          case "tests_finished":
 -                            $testsInProgress--;
@@ -414,7 +410,7 @@
                              // no break
                          case "ready":
                              // Schedule sequential tests only once we are down to one worker.
-@@ -1569,6 +1875,10 @@
+@@ -1565,6 +1867,10 @@
                                      }
                                  }
                                  $testsInProgress++;
@@ -425,7 +421,7 @@
                                  send_message($workerSocks[$i], [
                                      "type" => "run_tests",
                                      "test_files" => $files,
-@@ -1578,11 +1888,19 @@
+@@ -1574,11 +1880,19 @@
                              } else {
                                  proc_terminate($workerProcs[$i]);
                                  unset($workerProcs[$i], $workerSocks[$i]);
@@ -445,7 +441,7 @@
                              foreach ($message["PHP_FAILED_TESTS"] as $category => $tests) {
                                  $PHP_FAILED_TESTS[$category] = array_merge($PHP_FAILED_TESTS[$category], $tests);
                              }
-@@ -1724,9 +2042,9 @@
+@@ -1755,9 +2069,9 @@
                  run_all_tests($command["test_files"], $command["env"], $command["redir_tested"]);
                  send_message($workerSock, [
                      "type" => "tests_finished",
@@ -457,20 +453,20 @@
                  break;
              default:
                  send_message($workerSock, [
-@@ -3441,6 +3759,8 @@
+@@ -3380,6 +3694,8 @@
          }
- 
+
          $suite = $this->getSuiteName($file_name);
 +        $this->initSuite($suite);
 +        $this->suites[$suite]['files'][$file_name] = $file_name;
- 
+
          $this->record($suite, 'test_total');
- 
-@@ -3489,6 +3809,7 @@
+
+@@ -3428,6 +3744,7 @@
      private function record(string $suite, string $param, $value = 1): void
      {
          $this->rootSuite[$param] += $value;
 +        $this->initSuite($suite);
          $this->suites[$suite][$param] += $value;
      }
- 
+

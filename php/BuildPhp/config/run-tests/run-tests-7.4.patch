@@ -2,7 +2,7 @@
 +++ run-tests.php
 @@ -1294,22 +1294,20 @@
      }
- 
+
      foreach ($test_files as $name) {
 -        if (is_array($name)) {
 -            $index = "# $name[1]: $name[0]";
@@ -19,7 +19,7 @@
 +        $index = buildphp_worker_recovery_format_test_index($name, $redir_tested);
 +        $name = buildphp_worker_recovery_get_result_test_name($name, $redir_tested);
          $test_idx++;
- 
+
          if ($workerID) {
              $PHP_FAILED_TESTS = ['BORKED' => [], 'FAILED' => [], 'WARNED' => [], 'LEAKED' => [], 'XFAILED' => [], 'XLEAKED' => [], 'SLOW' => []];
              ob_start();
@@ -30,7 +30,7 @@
 +                "index" => $index,
 +            ]);
          }
- 
+
          $result = run_test($php, $name, $env);
 @@ -1321,12 +1319,15 @@
              if ($workerID) {
@@ -48,8 +48,8 @@
 +                buildphp_worker_recovery_reset_junit();
                  continue;
              }
- 
-@@ -1336,12 +1337,283 @@
+
+@@ -1336,12 +1337,279 @@
              }
              if ($result_tests_file) {
                  fwrite($result_tests_file, "$result\t$index\n");
@@ -249,10 +249,6 @@
 +            "constants" => [
 +                "INIT_DIR" => INIT_DIR,
 +                "TEST_PHP_SRCDIR" => TEST_PHP_SRCDIR,
-+                "PHP_QA_EMAIL" => PHP_QA_EMAIL,
-+                "QA_SUBMISSION_PAGE" => QA_SUBMISSION_PAGE,
-+                "QA_REPORTS_PAGE" => QA_REPORTS_PAGE,
-+                "TRAVIS_CI" => TRAVIS_CI
 +            ]
 +        ])) . "\n";
 +
@@ -327,22 +323,33 @@
 +        }
      }
  }
- 
+
  /** The heart of parallel testing. */
 +
  function run_all_tests_parallel($test_files, $env, $redir_tested) {
      global $workers, $test_idx, $test_cnt, $test_results, $failed_tests_file, $result_tests_file, $PHP_FAILED_TESTS, $shuffle, $SHOW_ONLY_GROUPS;
- 
-@@ -1352,6 +1624,7 @@
- 
+
+@@ -1352,6 +1620,7 @@
+
      $workerProcs = [];
      $workerSocks = [];
 +    $workerBatches = [];
- 
+
      echo "=====================================================================\n";
      echo "========= WELCOME TO THE FUTURE: run-tests PARALLEL EDITION =========\n";
-@@ -1496,6 +1769,23 @@
- 
+@@ -1450,10 +1719,6 @@
+             "constants" => [
+                 "INIT_DIR" => INIT_DIR,
+                 "TEST_PHP_SRCDIR" => TEST_PHP_SRCDIR,
+-                "PHP_QA_EMAIL" => PHP_QA_EMAIL,
+-                "QA_SUBMISSION_PAGE" => QA_SUBMISSION_PAGE,
+-                "QA_REPORTS_PAGE" => QA_REPORTS_PAGE,
+-                "TRAVIS_CI" => TRAVIS_CI
+             ]
+         ])) . "\n";
+
+@@ -1496,6 +1761,23 @@
+
  escape:
      while ($test_files || $sequentialTests || $testsInProgress > 0) {
 +        if (!$workerSocks) {
@@ -365,7 +372,7 @@
          $toRead = array_values($workerSocks);
          $toWrite = NULL;
          $toExcept = NULL;
-@@ -1506,6 +1796,28 @@
+@@ -1506,6 +1788,28 @@
                      kill_children($workerProcs);
                      error("Could not find worker stdout in array of worker stdouts, THIS SHOULD NOT HAPPEN.");
                  }
@@ -394,8 +401,8 @@
                  while (FALSE !== ($rawMessage = fgets($workerSock))) {
                      // work around fgets truncating things
                      if (($rawMessageBuffers[$i] ?? '') !== '') {
-@@ -1526,21 +1838,12 @@
- 
+@@ -1526,21 +1830,12 @@
+
                      switch ($message["type"]) {
                          case "tests_finished":
 -                            $testsInProgress--;
@@ -421,7 +428,7 @@
                              // intentional fall-through
                          case "ready":
                              // Schedule sequential tests only once we are down to one worker.
-@@ -1567,6 +1870,10 @@
+@@ -1567,6 +1862,10 @@
                                      }
                                  }
                                  $testsInProgress++;
@@ -432,7 +439,7 @@
                                  send_message($workerSocks[$i], [
                                      "type" => "run_tests",
                                      "test_files" => $files,
-@@ -1577,11 +1884,19 @@
+@@ -1577,11 +1876,19 @@
                                  proc_terminate($workerProcs[$i]);
                                  unset($workerProcs[$i]);
                                  unset($workerSocks[$i]);
@@ -452,7 +459,7 @@
                              foreach ($message["PHP_FAILED_TESTS"] as $category => $tests) {
                                  $PHP_FAILED_TESTS[$category] = array_merge($PHP_FAILED_TESTS[$category], $tests);
                              }
-@@ -1716,9 +2031,9 @@
+@@ -1716,9 +2023,9 @@
                  run_all_tests($command["test_files"], $command["env"], $command["redir_tested"]);
                  send_message($workerSock, [
                      "type" => "tests_finished",
@@ -464,20 +471,20 @@
                  break;
              default:
                  send_message($workerSock, [
-@@ -3414,6 +3729,8 @@
+@@ -3414,6 +3721,8 @@
      if (!junit_enabled()) return;
- 
+
      $suite = junit_get_suitename_for($file_name);
 +    junit_init_suite($suite);
 +    $JUNIT['suites'][$suite]['files'][$file_name] = $file_name;
- 
+
      junit_suite_record($suite, 'test_total');
- 
-@@ -3465,6 +3782,7 @@
+
+@@ -3465,6 +3774,7 @@
      global $JUNIT;
- 
+
      $JUNIT[$param] += $value;
 +    junit_init_suite($suite);
      $JUNIT['suites'][$suite][$param] += $value;
  }
- 
+
