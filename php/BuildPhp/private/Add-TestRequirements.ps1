@@ -107,6 +107,18 @@ function Add-TestRequirements {
 
         Add-WindowsTestHelpers -TestsDirectoryPath $testsDirectoryPath -Arch $Arch
 
+        $stackLimitTestPath = Join-Path $testsDirectoryPath 'Zend\tests\stack_limit\stack_limit_015.phpt'
+        if (Test-Path -Path $stackLimitTestPath) {
+            $stackLimitTestContents = Get-Content -Path $stackLimitTestPath -Raw
+            if ($stackLimitTestContents.Contains('zend.max_allowed_stack_size=128K')) {
+                $stackLimitTestContents = $stackLimitTestContents.Replace(
+                    'zend.max_allowed_stack_size=128K',
+                    'zend.max_allowed_stack_size=64K'
+                )
+                Set-Content -Path $stackLimitTestPath -Value $stackLimitTestContents -NoNewline
+            }
+        }
+
         $compatPatchApplied = $true
         $testSettings = Get-TestSettings -PhpVersion $compatVersion
         $compatPatchName = if ($testSettings.PSObject.Properties.Name -contains 'compatPatch') { $testSettings.compatPatch } else { '' }
