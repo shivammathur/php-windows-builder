@@ -27,13 +27,9 @@ function Invoke-PhpSdkStarter {
     begin {
     }
     process {
-        $process = Start-Process -FilePath "$BuildDirectory\php-sdk\phpsdk-starter.bat" `
-                                 -ArgumentList @('-c', $VsConfig.vs, '-a', $Arch, '-s', $VsConfig.toolset, '-t', $Task) `
-                                 -NoNewWindow `
-                                 -Wait `
-                                 -PassThru
-        if ($process.ExitCode -ne 0) {
-            throw "build failed with errorlevel $($process.ExitCode)"
+        & "$BuildDirectory\php-sdk\phpsdk-starter.bat" -c $VsConfig.vs -a $Arch -s $VsConfig.toolset -t $Task
+        if ($LASTEXITCODE -ne 0) {
+            throw "build failed with errorlevel $LASTEXITCODE"
         }
     }
     end {
