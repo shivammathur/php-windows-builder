@@ -93,13 +93,13 @@ function Get-Extension {
         $patches = $False
         if($null -ne $extension) {
             if(Test-Path -PATH "$PSScriptRoot\..\patches\${extension}.ps1") {
-                if((Get-Content "$PSScriptRoot\..\patches\${extension}.ps1").Contains('config.w32')) {
+                if((Get-Content "$PSScriptRoot\..\patches\${extension}.ps1" -Raw).Contains('config.w32')) {
                     Add-Patches "${extension}.ps1"
                     $patches = $True
                 }
             }
             if(Test-Path -PATH "$PSScriptRoot\..\patches\php\${PhpVersion}.ps1") {
-                if((Get-Content "$PSScriptRoot\..\patches\php\${PhpVersion}.ps1").Contains('config.w32')) {
+                if((Get-Content "$PSScriptRoot\..\patches\php\${PhpVersion}.ps1" -Raw).Contains('config.w32')) {
                     Add-Patches "php\${PhpVersion}.ps1"
                     $patches = $True
                 }
