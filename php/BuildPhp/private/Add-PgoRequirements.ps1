@@ -33,8 +33,8 @@ function Add-PgoRequirements {
             return
         }
 
-        $components = @($Config.pgo_components) | Select-Object -Unique
-        if ($components.Count -eq 0) {
+        [string[]] $components = @(@($Config.pgo_components) | Select-Object -Unique)
+        if ($components.Length -eq 0) {
             return
         }
 
