@@ -7,7 +7,7 @@ on:
         description: 'PHP version to build'
         required: true
       libs-build-runs:
-        description: 'Comma-separated list of GitHub Actions run IDs from winlibs/winlib-builder'
+        description: 'Comma-separated list of GitHub Actions run IDs from winlibs/winlib-builder; required for ARM64 builds'
         required: false
 
 jobs:
@@ -25,7 +25,14 @@ jobs:
         id: set-matrix
         shell: pwsh
         run: |
-          & ./.github/scripts/get-php-workflow-matrix.ps1 -PhpVersion '${{ inputs.php-version }}'
+          $supportsArm64 = -not [string]::IsNullOrWhiteSpace('${{ inputs.libs-build-runs }}')
+          if (-not $supportsArm64) {
+            Write-Host 'Skipping ARM64 matrix entries because no custom dependency workflow runs were provided.'
+          }
+
+          & ./.github/scripts/get-php-workflow-matrix.ps1 `
+            -PhpVersion '${{ inputs.php-version }}' `
+            -SupportsArm64Override:$supportsArm64
 
   php:
     needs: set-matrix

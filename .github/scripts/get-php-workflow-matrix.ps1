@@ -6,7 +6,9 @@ param(
     [Parameter(ParameterSetName = 'VersionHeader', Mandatory = $true)]
     [string]$VersionHeaderPath,
 
-    [string]$OutputPath = $env:GITHUB_OUTPUT
+    [string]$OutputPath = $env:GITHUB_OUTPUT,
+
+    [bool]$SupportsArm64Override
 )
 
 Set-StrictMode -Version Latest
@@ -120,7 +122,11 @@ function New-MatrixJson {
 }
 
 $resolvedPhpVersion = Resolve-PhpVersion
-$supportsArm64 = Test-SupportsArm64 -Version $resolvedPhpVersion
+$supportsArm64 = if ($PSBoundParameters.ContainsKey('SupportsArm64Override')) {
+    $SupportsArm64Override
+} else {
+    Test-SupportsArm64 -Version $resolvedPhpVersion
+}
 $archConfigs = Get-ArchConfigs -SupportsArm64:$supportsArm64
 
 $outputs = [ordered]@{
