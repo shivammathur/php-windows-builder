@@ -15,28 +15,33 @@ function Add-Arm64SourceCompatPatches {
     begin {
     }
     process {
-        $bcmathXssePath = Join-Path $SourceDirectory 'ext\bcmath\libbcmath\src\xsse.h'
-        if (-not (Test-Path -Path $bcmathXssePath)) {
-            return
-        }
-
-        $content = Get-Content -Path $bcmathXssePath -Raw
         $search = 'defined(_M_ARM64)'
         $replacement = '(defined(_M_ARM64) && !defined(_MSC_VER))'
-
-        if ($content.Contains($replacement)) {
-            return
-        }
-
-        if (-not $content.Contains($search)) {
-            Write-Warning "ARM64 bcmath compatibility patch marker not found in $bcmathXssePath"
-            return
-        }
-
-        $patchedContent = $content.Replace($search, $replacement)
         $encoding = New-Object System.Text.UTF8Encoding($false)
-        [System.IO.File]::WriteAllText($bcmathXssePath, $patchedContent, $encoding)
-        Write-Host "Applied ARM64 compatibility patch to $bcmathXssePath"
+        $compatibilityFiles = @(
+            (Join-Path $SourceDirectory 'ext\bcmath\libbcmath\src\xsse.h'),
+            (Join-Path $SourceDirectory 'Zend\zend_simd.h')
+        )
+
+        foreach ($filePath in $compatibilityFiles) {
+            if (-not (Test-Path -Path $filePath)) {
+                continue
+            }
+
+            $content = Get-Content -Path $filePath -Raw
+            if ($content.Contains($replacement)) {
+                continue
+            }
+
+            if (-not $content.Contains($search)) {
+                Write-Warning "ARM64 compatibility patch marker not found in $filePath"
+                continue
+            }
+
+            $patchedContent = $content.Replace($search, $replacement)
+            [System.IO.File]::WriteAllText($filePath, $patchedContent, $encoding)
+            Write-Host "Applied ARM64 compatibility patch to $filePath"
+        }
     }
     end {
     }
