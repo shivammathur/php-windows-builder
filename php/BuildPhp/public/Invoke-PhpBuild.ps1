@@ -47,7 +47,7 @@ function Invoke-PhpBuild {
         try {
             Set-Location "$buildDirectory"
 
-            Add-BuildRequirements -PhpVersion $PhpVersion -Arch $Arch -VsVersion $VsConfig.vs -FetchSrc:$fetchSrc
+            Add-BuildRequirements -PhpVersion $PhpVersion -Arch $Arch -VsVersion $VsConfig.vs -Toolset $VsConfig.toolset -FetchSrc:$fetchSrc
 
             $configDirectory = Join-Path $PSScriptRoot "..\config\$($VsConfig.vs)\$Arch"
             $configBatch = Join-Path $configDirectory "config.$Ts.bat"

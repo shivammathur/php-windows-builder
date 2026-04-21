@@ -23,14 +23,18 @@ function Add-BuildRequirements {
         [ValidateNotNull()]
         [ValidateLength(1, [int]::MaxValue)]
         [string] $VsVersion,
-        [Parameter(Mandatory = $false, Position=3, HelpMessage='Fetch PHP source code')]
+        [Parameter(Mandatory = $true, Position=3, HelpMessage='MSVC toolset version')]
+        [ValidateNotNull()]
+        [ValidateLength(1, [int]::MaxValue)]
+        [string] $Toolset,
+        [Parameter(Mandatory = $false, Position=4, HelpMessage='Fetch PHP source code')]
         [ValidateNotNull()]
         [bool] $FetchSrc = $True
     )
     begin {
     }
     process {
-        Add-PgoRequirements -VsVersion $VsVersion -Arch $Arch
+        Add-PgoRequirements -VsVersion $VsVersion -Toolset $Toolset -Arch $Arch
         Get-OciSdk -Arch $Arch
         Get-PhpSdk -Arch $Arch
         if($FetchSrc) {

@@ -13,7 +13,11 @@ function Add-PgoRequirements {
         [ValidateNotNull()]
         [ValidateLength(1, [int]::MaxValue)]
         [string] $VsVersion,
-        [Parameter(Mandatory = $false, Position=1, HelpMessage='Target architecture')]
+        [Parameter(Mandatory = $true, Position=1, HelpMessage='MSVC toolset version')]
+        [ValidateNotNull()]
+        [ValidateLength(1, [int]::MaxValue)]
+        [string] $Toolset,
+        [Parameter(Mandatory = $false, Position=2, HelpMessage='Target architecture')]
         [ValidateSet('x86', 'x64', 'arm64')]
         [string] $Arch = 'x64'
     )
@@ -47,8 +51,19 @@ function Add-PgoRequirements {
             Get-File -Url $vsWhereUrl -OutFile $vswherePath
         }
 
-        $installedPath = & $vswherePath -latest -products * -requires $components -property installationPath 2> $null | Select-Object -First 1
-        if (-not [string]::IsNullOrWhiteSpace($installedPath)) {
+        $installationPath = & $vswherePath -latest -products * -property installationPath 2> $null | Select-Object -First 1
+        if ([string]::IsNullOrWhiteSpace($installationPath)) {
+            throw "Visual Studio installation not found for PGO components"
+        }
+
+        $toolsetBinPath = Join-Path $installationPath.Trim() "VC\Tools\MSVC\$Toolset\bin"
+        if (-not (Test-Path -LiteralPath $toolsetBinPath)) {
+            throw "MSVC toolset path is not available for PGO components: $toolsetBinPath"
+        }
+
+        $pgomgrPath = Get-ChildItem -Path $toolsetBinPath -Filter 'pgomgr.exe' -Recurse -File -ErrorAction SilentlyContinue |
+            Select-Object -ExpandProperty FullName -First 1
+        if (-not [string]::IsNullOrWhiteSpace($pgomgrPath)) {
             return
         }
 
@@ -83,9 +98,10 @@ function Add-PgoRequirements {
             --quiet --wait --norestart --nocache `
             @componentArgs 2>&1 | ForEach-Object { Write-Host $_ }
 
-        $installedPath = & $vswherePath -latest -products * -requires $components -property installationPath 2> $null | Select-Object -First 1
-        if ([string]::IsNullOrWhiteSpace($installedPath)) {
-            throw "PGO Visual Studio components are not available for $VsVersion ($Arch)"
+        $pgomgrPath = Get-ChildItem -Path $toolsetBinPath -Filter 'pgomgr.exe' -Recurse -File -ErrorAction SilentlyContinue |
+            Select-Object -ExpandProperty FullName -First 1
+        if ([string]::IsNullOrWhiteSpace($pgomgrPath)) {
+            throw "PGO tools are not available for $VsVersion ($Arch) in toolset $Toolset"
         }
     }
     end {
