@@ -65,6 +65,9 @@ function Invoke-PhpBuild {
             $artifactsDirectory = Join-Path $currentDirectory 'artifacts'
 
             Set-Location "$buildPath"
+            if($Arch -eq 'arm64') {
+                Add-Arm64SourceCompatPatches -SourceDirectory $buildPath
+            }
             New-Item (Join-Path $buildParent 'obj') -ItemType "directory" -Force > $null 2>&1
             Copy-Item -Path $configBatch -Destination (Join-Path $buildPath "config.$Ts.bat") -Force
             Add-PhpDeps -PhpVersion $PhpVersion -VsVersion $VsConfig.vs -Arch $Arch -Destination (Join-Path $buildParent 'deps')
