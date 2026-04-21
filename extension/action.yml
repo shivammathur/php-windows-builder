@@ -20,7 +20,7 @@ inputs:
     description: PHP version to build
     required: true
   arch:
-    description: Architecture to build
+    description: Architecture to build (x86, x64, or arm64 for PHP 8.0+)
     required: true
   ts:
     description: Thread safety to build
@@ -77,7 +77,7 @@ runs:
       id: vs-check
       shell: pwsh
       run: |
-        Get-VsCacheInfo -PhpVersion ${{ inputs.php-version }}
+        Get-VsCacheInfo -PhpVersion ${{ inputs.php-version }} -Arch ${{ inputs.arch }}
 
     - name: Restore VS components cache
       id: vs-cache
@@ -120,7 +120,7 @@ runs:
       if: steps.vs-check.outputs.needs-vs-install == 'true' && steps.vs-cache.outputs.cache-hit != 'true'
       shell: pwsh
       run: |
-        Invoke-SaveVsToolsetCache -PhpVersion ${{ inputs.php-version }} -CachePath "${{ steps.vs-check.outputs.vs-cache-path }}"
+        Invoke-SaveVsToolsetCache -PhpVersion ${{ inputs.php-version }} -CachePath "${{ steps.vs-check.outputs.vs-cache-path }}" -Arch ${{ inputs.arch }}
 
     - name: Save VS components cache
       if: steps.vs-check.outputs.needs-vs-install == 'true' && steps.vs-cache.outputs.cache-hit != 'true'

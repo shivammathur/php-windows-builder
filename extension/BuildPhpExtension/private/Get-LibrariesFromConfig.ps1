@@ -33,7 +33,16 @@ Function Get-LibrariesFromConfig {
         $jsonDataContent = (Get-File -Url "https://downloads.php.net/~windows/pecl/deps/libmapping.json").Content
         $jsonData = $jsonDataContent | ConvertFrom-Json
 
-        $phpSeries = (Get-File -Url "https://downloads.php.net/~windows/php-sdk/deps/$VsVersion/$Arch").Content.ToLower()
+        $dependencyArch = $Arch
+        if ($Arch -eq 'arm64') {
+            try {
+                $null = Get-File -Url "https://downloads.php.net/~windows/php-sdk/deps/$VsVersion/$Arch"
+            } catch {
+                $dependencyArch = 'x64'
+            }
+        }
+
+        $phpSeries = (Get-File -Url "https://downloads.php.net/~windows/php-sdk/deps/$VsVersion/$dependencyArch").Content.ToLower()
 
         Function Find-Library {
             param (
@@ -46,7 +55,7 @@ Function Get-LibrariesFromConfig {
                 foreach ($vsVersionData in $JsonData.PSObject.Properties) {
                     if($vsVersionData.Name -eq $VsVersion) {
                         foreach ($archData in $vsVersionData.Value.PSObject.Properties) {
-                            if($archData.Name -eq $Arch) {
+                            if($archData.Name -eq $dependencyArch) {
                                 foreach ($libs in $archData.Value.PSObject.Properties) {
                                     if ($libs.Value -match ($MatchString.Replace('*', '.*'))) {
                                         $libs.Name -Match '^(.+?)-\d' | Out-Null

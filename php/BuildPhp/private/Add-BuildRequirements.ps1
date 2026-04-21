@@ -17,17 +17,22 @@ function Add-BuildRequirements {
         [string] $PhpVersion,
         [Parameter(Mandatory = $true, Position=1, HelpMessage='PHP Architecture')]
         [ValidateNotNull()]
-        [ValidateSet('x86', 'x64')]
+        [ValidateSet('x86', 'x64', 'arm64')]
         [string] $Arch,
-        [Parameter(Mandatory = $false, Position=2, HelpMessage='Fetch PHP source code')]
+        [Parameter(Mandatory = $true, Position=2, HelpMessage='Visual Studio Version')]
+        [ValidateNotNull()]
+        [ValidateLength(1, [int]::MaxValue)]
+        [string] $VsVersion,
+        [Parameter(Mandatory = $false, Position=3, HelpMessage='Fetch PHP source code')]
         [ValidateNotNull()]
         [bool] $FetchSrc = $True
     )
     begin {
     }
     process {
+        Add-PgoRequirements -VsVersion $VsVersion -Arch $Arch
         Get-OciSdk -Arch $Arch
-        Get-PhpSdk
+        Get-PhpSdk -Arch $Arch
         if($FetchSrc) {
             Get-PhpSrc -PhpVersion $PhpVersion
         }

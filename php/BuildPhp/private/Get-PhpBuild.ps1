@@ -19,7 +19,7 @@ function Get-PhpBuild {
         [string] $PhpVersion,
         [Parameter(Mandatory = $true, Position=1, HelpMessage='PHP Architecture')]
         [ValidateNotNull()]
-        [ValidateSet('x86', 'x64')]
+        [ValidateSet('x86', 'x64', 'arm64')]
         [string] $Arch,
         [Parameter(Mandatory = $true, Position=2, HelpMessage='PHP Build Type')]
         [ValidateNotNull()]
@@ -35,10 +35,13 @@ function Get-PhpBuild {
         Add-Type -Assembly "System.IO.Compression.Filesystem"
 
         if($null -eq $VsVersion) {
-            $VsVersion = (Get-VsVersion -PhpVersion $PhpVersion)
-            if($null -eq $VsVersion) {
+            $vsData = Get-VsVersion -PhpVersion $PhpVersion -Arch $Arch
+            if($null -eq $vsData) {
                 throw "PHP version $PhpVersion is not supported."
             }
+            $VsVersion = $vsData.vs
+        } elseif ($Arch -eq 'arm64' -and $VsVersion -notin @('vs16', 'vs17')) {
+            throw "ARM64 builds are supported only for toolchains based on VS2019 or VS2022. PHP version $PhpVersion resolves to $VsVersion."
         }
         $versionInUrl = $PhpVersion
         if($PhpVersion -eq 'master') {

@@ -17,8 +17,9 @@ Function Add-PhpDependencies {
             Add-StepLog "Adding libraries (core)"
         }
         $phpBaseUrl = 'https://downloads.php.net/~windows/php-sdk/deps'
-        $phpTrunkBaseUrl = "https://downloads.php.net/~windows/php-sdk/deps/$($Config.vs_version)/$($Config.arch)"
-        $phpSeries = Get-File -Url "$phpBaseUrl/series/packages-$($Config.php_version)-$($Config.vs_version)-$($Config.arch)-stable.txt"
+        $dependencyArch = if ($Config.PSObject.Properties.Name -contains 'dependency_arch') { $Config.dependency_arch } else { $Config.arch }
+        $phpTrunkBaseUrl = "https://downloads.php.net/~windows/php-sdk/deps/$($Config.vs_version)/$dependencyArch"
+        $phpSeries = Get-File -Url "$phpBaseUrl/series/packages-$($Config.php_version)-$($Config.vs_version)-$dependencyArch-stable.txt"
         $phpTrunk = Get-File -Url $phpTrunkBaseUrl
         foreach ($library in $Config.php_libraries) {
             try {
@@ -35,7 +36,7 @@ Function Add-PhpDependencies {
                     throw "Failed to find $library"
                 }
                 $file = $matchesFound.Matches[0].Value.Trim()
-                Get-File -Url "$phpBaseUrl/$($Config.vs_version)/$($Config.arch)/$file" -OutFile $library
+                Get-File -Url "$phpBaseUrl/$($Config.vs_version)/$dependencyArch/$file" -OutFile $library
                 Expand-Archive $library "../deps" -Force
                 Add-BuildLog tick "$library" "Added $($file -replace '\.zip$')"
             } catch {

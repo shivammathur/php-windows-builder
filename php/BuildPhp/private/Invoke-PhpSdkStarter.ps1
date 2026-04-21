@@ -19,7 +19,7 @@ function Invoke-PhpSdkStarter {
         [PSCustomObject] $VsConfig,
         [Parameter(Mandatory = $true, Position=2, HelpMessage='PHP Architecture')]
         [ValidateNotNull()]
-        [ValidateSet('x86', 'x64')]
+        [ValidateSet('x86', 'x64', 'arm64')]
         [string] $Arch,
         [Parameter(Mandatory = $true, Position=3, HelpMessage='Task script')]
         [string] $Task
@@ -27,7 +27,8 @@ function Invoke-PhpSdkStarter {
     begin {
     }
     process {
-        & "$BuildDirectory\php-sdk\phpsdk-starter.bat" -c $VsConfig.vs -a $Arch -s $VsConfig.toolset -t $Task
+        $starterCommand = Get-PhpSdkStarterCommand -SdkDirectory "$BuildDirectory\php-sdk" -VsConfig $VsConfig -Arch $Arch -Task $Task
+        & $starterCommand.Path @($starterCommand.Arguments)
         if ($LASTEXITCODE -ne 0) {
             throw "build failed with errorlevel $LASTEXITCODE"
         }

@@ -7,7 +7,7 @@ function Add-PhpDeps {
     .PARAMETER VsVersion
         Visual Studio toolset version (e.g., vs16, vs17).
     .PARAMETER Arch
-        Target architecture: x86 or x64.
+        Target architecture: x86, x64, or arm64.
     .PARAMETER Destination
         Destination directory to extract the downloaded deps into.
     #>
@@ -20,7 +20,7 @@ function Add-PhpDeps {
         [ValidateNotNullOrEmpty()]
         [string] $VsVersion,
         [Parameter(Mandatory=$true)]
-        [ValidateSet('x86','x64')]
+        [ValidateSet('x86','x64','arm64')]
         [string] $Arch,
         [Parameter(Mandatory=$true)]
         [ValidateNotNullOrEmpty()]
@@ -42,6 +42,10 @@ function Add-PhpDeps {
         }
 
         $packageData = Get-PhpDepsPackages -PhpVersion $PhpVersion -VsVersion $VsVersion -Arch $Arch
+        $downloadArch = $packageData.DownloadArch
+        if ($downloadArch -ne $Arch) {
+            Write-Warning "Native $Arch dependency packages are not available yet. Falling back to $downloadArch packages."
+        }
         $lines = @($packageData.Packages)
         if ($packageData.OverrideLibraries.Count -ne 0) {
             $downloadedLibs = @($downloadedLibs | Where-Object { $packageData.OverrideLibraries -notcontains $_ })
@@ -58,7 +62,7 @@ function Add-PhpDeps {
 
             Write-Host "Processing package $line"
             $temp = New-TemporaryFile | Rename-Item -NewName { $_.Name + '.zip' } -PassThru
-            $url = "$baseurl/$VsVersion/$Arch/$line"
+            $url = "$baseurl/$VsVersion/$downloadArch/$line"
             Invoke-WebRequest -Uri $url -UseBasicParsing -OutFile $temp.FullName -ErrorAction Stop
             try {
                 Expand-Archive -LiteralPath $temp.FullName -DestinationPath $Destination -Force

@@ -6,6 +6,8 @@ function Add-Vs {
         Visual Studio Configuration
     .PARAMETER VsVersion
         Visual Studio Version
+    .PARAMETER Arch
+        Target architecture.
     #>
     [OutputType()]
     param (
@@ -14,7 +16,10 @@ function Add-Vs {
         [ValidateLength(1, [int]::MaxValue)]
         [string] $VsVersion,
         [Parameter(Mandatory = $true, Position=1, HelpMessage='Visual Studio Configuration')]
-        [PSCustomObject] $VsConfig
+        [PSCustomObject] $VsConfig,
+        [Parameter(Mandatory = $false, Position=2, HelpMessage='Target architecture')]
+        [ValidateSet('x86', 'x64', 'arm64')]
+        [string] $Arch = 'x64'
     )
     begin {
         $vsWhereUrl = 'https://github.com/microsoft/vswhere/releases/latest/download/vswhere.exe'
@@ -34,7 +39,11 @@ function Add-Vs {
         $instances = & $vswherePath -products '*' -format json 2> $null | ConvertFrom-Json
         $vsInst = $instances | Select-Object -First 1
 
-        $componentArgs = $Config.components | ForEach-Object { '--add'; $_ }
+        $components = @($Config.components)
+        if ($Arch -eq 'arm64' -and $Config.PSObject.Properties.Name -contains 'arm64_components') {
+            $components += @($Config.arm64_components)
+        }
+        $componentArgs = $components | Select-Object -Unique | ForEach-Object { '--add'; $_ }
 
         if ($vsInst) {
             [string]$channel = $vsInst.installationVersion.Split('.')[0]

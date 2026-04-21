@@ -65,6 +65,7 @@
         'Add-BuildRequirements',
         'Add-Path',
         'Add-PhpDeps',
+        'Add-PgoRequirements',
         'Add-TestRequirements',
         'Add-Vs',
         'Get-DepsCacheInfo',

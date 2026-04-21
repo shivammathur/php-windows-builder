@@ -7,7 +7,7 @@ function Get-PhpDepsPackages {
     .PARAMETER VsVersion
         Visual Studio toolset version (e.g., vs16, vs17).
     .PARAMETER Arch
-        Target architecture: x86 or x64.
+        Target architecture: x86, x64, or arm64.
     #>
     [CmdletBinding()]
     [OutputType([PSCustomObject])]
@@ -19,7 +19,7 @@ function Get-PhpDepsPackages {
         [ValidateNotNullOrEmpty()]
         [string] $VsVersion,
         [Parameter(Mandatory=$true)]
-        [ValidateSet('x86','x64')]
+        [ValidateSet('x86','x64','arm64')]
         [string] $Arch
     )
 
@@ -37,12 +37,41 @@ function Get-PhpDepsPackages {
             }
         }
 
-        $seriesUrl = "$baseurl/series/packages-$depsPhpVersion-$VsVersion-$Arch-staging.txt"
-        Write-Host "Fetching series listing: $seriesUrl"
-        $series = Invoke-WebRequest -Uri $seriesUrl -UseBasicParsing -ErrorAction Stop
+        $downloadArch = $Arch
+        $series = $null
         $packages = @()
-        if ($series -and $series.Content) {
-            $packages = $series.Content -split "[\r\n]+" | Where-Object { $_ -and $_.Trim().Length -gt 0 }
+        $candidateArchs = @($Arch)
+        if ($Arch -eq 'arm64') {
+            $candidateArchs += 'x64'
+        }
+
+        foreach ($candidateArch in ($candidateArchs | Select-Object -Unique)) {
+            $seriesUrl = "$baseurl/series/packages-$depsPhpVersion-$VsVersion-$candidateArch-staging.txt"
+            Write-Host "Fetching series listing: $seriesUrl"
+            try {
+                $candidateSeries = Invoke-WebRequest -Uri $seriesUrl -UseBasicParsing -ErrorAction Stop
+                $candidatePackages = @()
+                if ($candidateSeries -and $candidateSeries.Content) {
+                    $candidatePackages = $candidateSeries.Content -split "[\r\n]+" | Where-Object { $_ -and $_.Trim().Length -gt 0 }
+                }
+
+                if ($candidatePackages.Count -eq 0) {
+                    continue
+                }
+
+                $downloadArch = $candidateArch
+                $series = $candidateSeries
+                $packages = $candidatePackages
+                break
+            } catch {
+                if ($candidateArch -eq $candidateArchs[-1]) {
+                    throw
+                }
+            }
+        }
+
+        if (-not $series) {
+            throw "Failed to fetch dependency series for PHP $depsPhpVersion ($VsVersion, $Arch)."
         }
 
         $overrideLibraries = @()
@@ -57,11 +86,11 @@ function Get-PhpDepsPackages {
                         $overrideConfig = $libraryProperty.Value
                         $package = $null
                         if ($overrideConfig -is [string]) {
-                            $package = "$libraryName-$overrideConfig-$VsVersion-$Arch.zip"
+                            $package = "$libraryName-$overrideConfig-$VsVersion-$downloadArch.zip"
                         } elseif ($overrideConfig.PSObject.Properties.Name -contains 'package') {
                             $package = $overrideConfig.package
                         } elseif ($overrideConfig.PSObject.Properties.Name -contains 'version') {
-                            $package = "$libraryName-$($overrideConfig.version)-$VsVersion-$Arch.zip"
+                            $package = "$libraryName-$($overrideConfig.version)-$VsVersion-$downloadArch.zip"
                         }
 
                         if ([string]::IsNullOrWhiteSpace($package)) {
@@ -89,6 +118,7 @@ function Get-PhpDepsPackages {
         return [PSCustomObject]@{
             Packages = @($packages)
             OverrideLibraries = @($overrideLibraries | Select-Object -Unique)
+            DownloadArch = $downloadArch
         }
     }
 }

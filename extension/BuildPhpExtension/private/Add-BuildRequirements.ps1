@@ -51,7 +51,7 @@ function Add-BuildRequirements {
     begin {
     }
     process {
-        Get-PhpSdk
+        Get-PhpSdk -Arch $Arch
         $config = Get-ExtensionConfig -Extension $Extension `
                                       -ExtensionRef $ExtensionRef `
                                       -PhpVersion $PhpVersion `

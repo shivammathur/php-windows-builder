@@ -59,8 +59,12 @@ Function Add-Extension {
                 $bat_content += "nmake /nologo 2>&1"
                 $bat_content += "exit %errorlevel%"
                 Set-Content -Encoding "ASCII" -Path $Extension-task.bat -Value $bat_content
-                $builder = "$currentDirectory\php-sdk\phpsdk-starter.bat"
                 $task = (Get-Item -Path "." -Verbose).FullName + "\$Extension-task.bat"
+                $starterCommand = Get-PhpSdkStarterCommand -SdkDirectory "$currentDirectory\php-sdk" `
+                                                           -VsVersion $Config.vs_version `
+                                                           -VsToolset $Config.vs_toolset `
+                                                           -Arch $Config.Arch `
+                                                           -Task $task
                 $suffix = "php_" + (@(
                     $Config.name,
                     $Config.ref,
@@ -69,7 +73,7 @@ Function Add-Extension {
                     $Config.vs_version,
                     $Config.arch
                 ) -join "-")
-                & $builder -c $Config.vs_version -a $Config.Arch -s $Config.vs_toolset -t $task | Tee-Object -FilePath "build-$suffix.txt"
+                & $starterCommand.Path @($starterCommand.Arguments) | Tee-Object -FilePath "build-$suffix.txt"
                 Write-Host (Get-Content "build-$suffix.txt" -Raw)
                 $includePath = "$currentDirectory\php-dev\include"
                 New-Item -Path $includePath\ext -Name $Extension -ItemType "directory" | Out-Null

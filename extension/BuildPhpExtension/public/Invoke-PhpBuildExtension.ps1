@@ -29,7 +29,7 @@ function Invoke-PhpBuildExtension {
         [string] $PhpVersion,
         [Parameter(Mandatory = $true, Position=3, HelpMessage='PHP Architecture')]
         [ValidateNotNull()]
-        [ValidateSet('x86', 'x64')]
+        [ValidateSet('x86', 'x64', 'arm64')]
         [string] $Arch,
         [Parameter(Mandatory = $true, Position=4, HelpMessage='PHP Build Type')]
         [ValidateNotNull()]
@@ -45,7 +45,7 @@ function Invoke-PhpBuildExtension {
     process {
         Set-StrictMode -Off
         Set-NetSecurityProtocolType
-        $VsData = (Get-VsVersion -PhpVersion $PhpVersion)
+        $VsData = (Get-VsVersion -PhpVersion $PhpVersion -Arch $Arch)
         if($null -eq $VsData.vs) {
             throw "PHP version $PhpVersion is not supported."
         }

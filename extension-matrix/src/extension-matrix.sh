@@ -31,8 +31,8 @@ for php_version in "${php_version_array[@]}"; do
   else
     continue
   fi
-  os=$(jq -r --arg php_version "$php_version" '.[$php_version].os' "$vs_json")
   for arch in "${arch_array[@]}"; do
+    os=$(jq -r --arg php_version "$php_version" --arg arch "$arch" '.[$php_version].os_by_arch[$arch] // .[$php_version].os_by_arch.default // .[$php_version].os' "$vs_json")
     for ts in "${ts_array[@]}"; do
       matrix+=("{\"os\": \"$os\", \"php-version\": \"$php_version\", \"arch\": \"$arch\", \"ts\": \"$ts\"}")
     done

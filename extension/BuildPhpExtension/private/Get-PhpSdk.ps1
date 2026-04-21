@@ -5,22 +5,36 @@ function Get-PhpSdk {
     #>
     [OutputType()]
     param (
+        [Parameter(Mandatory = $false, Position=0, HelpMessage='Extension Architecture')]
+        [ValidateNotNull()]
+        [ValidateSet('x86', 'x64', 'arm64')]
+        [string] $Arch = 'x64'
     )
     begin {
-        $sdkVersion = "php-sdk-2.6.0"
-        $url = "https://github.com/php/php-sdk-binary-tools/archive/$sdkVersion.zip"
+        $sdkRef = "refs/heads/arm64-support"
+        $sdkRepository = "shivammathur/php-sdk-binary-tools"
+        $url = "https://github.com/$sdkRepository/archive/$sdkRef.zip"
     }
     process {
         Add-StepLog "Adding PHP SDK"
         try
         {
             Add-Type -Assembly "System.IO.Compression.Filesystem"
+            $existingDirectories = @(Get-ChildItem -Directory | Select-Object -ExpandProperty Name)
 
             Get-File -Url $url -OutFile php-sdk.zip
             $currentDirectory = (Get-Location).Path
             $sdkZipFilePath = Join-Path $currentDirectory php-sdk.zip
             [System.IO.Compression.ZipFile]::ExtractToDirectory($sdkZipFilePath, $currentDirectory)
-            Rename-Item -Path php-sdk-binary-tools-$sdkVersion php-sdk
+            $sdkDirectory = Get-ChildItem -Directory -Filter 'php-sdk-binary-tools-*' |
+                Where-Object { $existingDirectories -notcontains $_.Name } |
+                Select-Object -First 1
+
+            if ($null -eq $sdkDirectory) {
+                throw "Failed to locate the extracted PHP SDK directory for $sdkRepository@$sdkRef"
+            }
+
+            Rename-Item -Path $sdkDirectory.FullName -NewName php-sdk
 
             $sdkDirectoryPath = Join-Path $currentDirectory php-sdk
             $sdkBinDirectoryPath = Join-Path $sdkDirectoryPath bin

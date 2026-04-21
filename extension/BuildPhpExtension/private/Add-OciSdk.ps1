@@ -13,7 +13,10 @@ Function Add-OciSdk {
     begin {
     }
     process {
-        $suffix = if ($Config.arch -eq "x64") {"windows"} else {"nt"}
+        $suffix = if ($Config.arch -eq "x86") {"nt"} else {"windows"}
+        if ($Config.arch -eq 'arm64') {
+            Write-Warning 'Oracle does not publish a dedicated ARM64 Instant Client package here yet. Falling back to the x64 package.'
+        }
         @('sdk', 'basic') | ForEach-Object {
             $url = "https://download.oracle.com/otn_software/nt/instantclient/instantclient-$_-$suffix.zip"
             Get-File -Url $url -OutFile "instantclient-$_.zip"

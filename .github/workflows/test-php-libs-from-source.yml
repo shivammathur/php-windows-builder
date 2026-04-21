@@ -14,12 +14,36 @@ on:
         required: false
 
 jobs:
+  set-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      build-matrix: ${{ steps.set-matrix.outputs.build-matrix }}
+      test-matrix: ${{ steps.set-matrix.outputs.test-matrix }}
+      smoke-matrix: ${{ steps.set-matrix.outputs.smoke-matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Checkout PHP source
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ inputs.php-src-repository }}
+          ref: ${{ inputs.php-src-ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          path: php-src
+
+      - name: Generate matrices
+        id: set-matrix
+        shell: pwsh
+        run: |
+          & ./.github/scripts/get-php-workflow-matrix.ps1 `
+            -VersionHeaderPath (Join-Path $PWD 'php-src/main/php_version.h')
+
   php:
+    needs: set-matrix
     strategy:
-      matrix:
-        arch: [x64, x86]
-        ts: [nts, ts]
-    runs-on: windows-2022
+      matrix: ${{ fromJson(needs.set-matrix.outputs.build-matrix) }}
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout PHP source
         uses: actions/checkout@v6
@@ -57,14 +81,10 @@ jobs:
           delete-merged: true
 
   tests:
-    needs: artifacts
+    needs: [set-matrix, artifacts]
     strategy:
-      matrix:
-        arch: [x64, x86]
-        ts: [nts, ts]
-        opcache: [opcache, nocache]
-        test-type: [php, ext]
-    runs-on: windows-2022
+      matrix: ${{ fromJson(needs.set-matrix.outputs.test-matrix) }}
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -115,7 +135,7 @@ jobs:
                           -Arch ${{matrix.arch}} `
                           -Ts ${{matrix.ts}} `
                           -Opcache ${{matrix.opcache}} `
-                          -TestType ${{matrix.test-type}} `
+                          -TestType ${{matrix.test_type}} `
                           -SourceRepository '${{ inputs.php-src-repository }}' `
                           -SourceRef '${{ inputs.php-src-ref }}'
 
@@ -123,16 +143,14 @@ jobs:
         uses: actions/upload-artifact@v7
         continue-on-error: true
         with:
-          name: test-results-${{matrix.arch}}-${{matrix.ts}}-${{matrix.opcache}}-${{matrix.test-type}}
-          path: test-${{matrix.arch}}-${{matrix.ts}}-${{matrix.opcache}}-${{matrix.test-type}}.xml
+          name: test-results-${{matrix.arch}}-${{matrix.ts}}-${{matrix.opcache}}-${{matrix.test_type}}
+          path: test-${{matrix.arch}}-${{matrix.ts}}-${{matrix.opcache}}-${{matrix.test_type}}.xml
 
   smoke-tests:
+    needs: [set-matrix, artifacts]
     strategy:
-      matrix:
-        arch: [x64, x86]
-        ts: [nts, ts]
-    runs-on: windows-2022
-    needs: [artifacts]
+      matrix: ${{ fromJson(needs.set-matrix.outputs.smoke-matrix) }}
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6

@@ -6,6 +6,8 @@ function Invoke-SaveVsToolsetCache {
         PHP Version.
     .PARAMETER CachePath
         Cache staging path.
+    .PARAMETER Arch
+        Target architecture.
     #>
     [OutputType()]
     param (
@@ -16,7 +18,10 @@ function Invoke-SaveVsToolsetCache {
         [Parameter(Mandatory = $true, Position=1, HelpMessage='Cache staging path')]
         [ValidateNotNull()]
         [ValidateLength(1, [int]::MaxValue)]
-        [string] $CachePath
+        [string] $CachePath,
+        [Parameter(Mandatory = $true, Position=2, HelpMessage='Target architecture')]
+        [ValidateSet('x86', 'x64', 'arm64')]
+        [string] $Arch
     )
     begin {
     }
@@ -26,7 +31,7 @@ function Invoke-SaveVsToolsetCache {
             throw "Visual Studio installation path is not available."
         }
 
-        $vsData = Get-VsVersion -PhpVersion $PhpVersion
+        $vsData = Get-VsVersion -PhpVersion $PhpVersion -Arch $Arch
         Sync-VsToolsetCache -VsInstallPath $vsInstallPath -CachePath $CachePath -Toolset $vsData.toolset
     }
     end {

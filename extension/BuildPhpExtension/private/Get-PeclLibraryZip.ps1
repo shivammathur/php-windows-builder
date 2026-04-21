@@ -39,30 +39,37 @@ function Get-PeclLibraryZip {
     }
     process {
         $olderVs = Get-OlderVsVersion -PhpVersion $PhpVersion
-        foreach($vs in ((@($olderVs) + @($VsVersion)) | Sort-Object -Descending)) {
-            $lib_name, $lib_version = ($Library -split '-')[0, 1]
-            $key = $lib_name.toLower() + "-?([0-9].*)-$vs-$Arch\.zip"
-            $options = @()
-            $ExtensionSeries.Links | ForEach-Object {
-                if($_.HREF.toLower() -match $key) {
-                    $link_matches = $matches
-                    if($null -eq $lib_version -or $matches[1] -match ('^' + $lib_version + '.*'))
-                    {
-                        if($link_matches[1].Contains('.')) { $suffix="" } else { $suffix=".0" }
-                        $versionParts = $link_matches[1] -split '-'
-                        if($null -ne $versionParts[1] -and $versionParts[1].Contains('.')) {
-                            $versionParts[0] = $versionParts[0] + $versionParts[1].Replace('.', '')
-                        }
-                        $options += @{
-                            name = ($_.HREF -split ('/') | Select-Object -Last 1)
-                            version = ($versionParts[0] + $suffix)
+        $candidateArchs = @($Arch)
+        if ($Arch -eq 'arm64') {
+            $candidateArchs += 'x64'
+        }
+
+        foreach($candidateArch in ($candidateArchs | Select-Object -Unique)) {
+            foreach($vs in ((@($olderVs) + @($VsVersion)) | Sort-Object -Descending)) {
+                $lib_name, $lib_version = ($Library -split '-')[0, 1]
+                $key = $lib_name.toLower() + "-?([0-9].*)-$vs-$candidateArch\.zip"
+                $options = @()
+                $ExtensionSeries.Links | ForEach-Object {
+                    if($_.HREF.toLower() -match $key) {
+                        $link_matches = $matches
+                        if($null -eq $lib_version -or $matches[1] -match ('^' + $lib_version + '.*'))
+                        {
+                            if($link_matches[1].Contains('.')) { $suffix="" } else { $suffix=".0" }
+                            $versionParts = $link_matches[1] -split '-'
+                            if($null -ne $versionParts[1] -and $versionParts[1].Contains('.')) {
+                                $versionParts[0] = $versionParts[0] + $versionParts[1].Replace('.', '')
+                            }
+                            $options += @{
+                                name = ($_.HREF -split ('/') | Select-Object -Last 1)
+                                version = ($versionParts[0] + $suffix)
+                            }
                         }
                     }
                 }
-            }
-            if($options.Count -gt 0) {
-                $latest = $options | Sort-Object -Property { [version] $_.version } -Descending | Select-Object -First 1
-                return $latest.name
+                if($options.Count -gt 0) {
+                    $latest = $options | Sort-Object -Property { [version] $_.version } -Descending | Select-Object -First 1
+                    return $latest.name
+                }
             }
         }
     }

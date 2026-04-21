@@ -3,7 +3,7 @@ function Get-LibsBuildDeps {
     .SYNOPSIS
         Download dependencies from GitHub Actions workflow runs.
     .PARAMETER Arch
-        Target architecture: x86 or x64.
+        Target architecture: x86, x64, or arm64.
     .PARAMETER Destination
         Destination directory to extract the downloaded deps into.
     .OUTPUTS
@@ -13,7 +13,7 @@ function Get-LibsBuildDeps {
     [OutputType([string[]])]
     param(
         [Parameter(Mandatory=$true)]
-        [ValidateSet('x86','x64')]
+        [ValidateSet('x86','x64','arm64')]
         [string] $Arch,
         [Parameter(Mandatory=$true)]
         [ValidateNotNullOrEmpty()]
@@ -50,12 +50,27 @@ function Get-LibsBuildDeps {
             continue
         }
 
-        foreach ($artifact in $response.artifacts) {
-            # Filter by architecture
-            if ($artifact.name -notmatch $Arch) {
-                continue
-            }
+        $candidateArchs = @($Arch)
+        if ($Arch -eq 'arm64') {
+            $candidateArchs += 'x64'
+        }
 
+        $matchingArtifacts = @()
+        $artifactArch = $Arch
+        foreach ($candidateArch in ($candidateArchs | Select-Object -Unique)) {
+            $matchingArtifacts = @($response.artifacts | Where-Object { $_.name -match $candidateArch })
+            if ($matchingArtifacts.Count -gt 0) {
+                $artifactArch = $candidateArch
+                break
+            }
+        }
+
+        if ($artifactArch -ne $Arch) {
+            Write-Warning "ARM64 workflow-run dependency artifacts are not available for run $runId yet. Falling back to $artifactArch artifacts."
+        }
+
+        foreach ($artifact in $matchingArtifacts) {
+            # Filter by architecture
             Write-Host "Downloading artifact: $($artifact.name)"
             $libName = $artifact.name -replace '-\d.*$', ''
             $downloadedLibs += $libName

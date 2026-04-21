@@ -4,13 +4,18 @@ function Get-VsCacheInfo {
         Check if VS components need to be installed and set GitHub Actions outputs for caching.
     .PARAMETER PhpVersion
         PHP Version
+    .PARAMETER Arch
+        Target architecture
     #>
     [OutputType()]
     param (
         [Parameter(Mandatory = $true, Position=0, HelpMessage='PHP Version')]
         [ValidateNotNull()]
         [ValidateLength(1, [int]::MaxValue)]
-        [string] $PhpVersion
+        [string] $PhpVersion,
+        [Parameter(Mandatory = $true, Position=1, HelpMessage='Target architecture')]
+        [ValidateSet('x86', 'x64', 'arm64')]
+        [string] $Arch
     )
     begin {
         $jsonPath = [System.IO.Path]::Combine($PSScriptRoot, '..\config\vs.json')
@@ -26,12 +31,16 @@ function Get-VsCacheInfo {
         $vsInstallPath = Get-VsInstallPath
         if (-not [string]::IsNullOrWhiteSpace($vsInstallPath)) {
             try {
-                Get-VsVersionHelper -VsVersion $VsVersion -VsConfig $VsConfig | Out-Null
+                Get-VsVersionHelper -VsVersion $VsVersion -VsConfig $VsConfig -Arch $Arch | Out-Null
                 $needsInstall = $false
             } catch {
             }
         }
-        $components = $VsConfig.vs.$VsVersion.components -join ','
+        $components = @($VsConfig.vs.$VsVersion.components)
+        if ($Arch -eq 'arm64' -and $VsConfig.vs.$VsVersion.PSObject.Properties.Name -contains 'arm64_components') {
+            $components += @($VsConfig.vs.$VsVersion.arm64_components)
+        }
+        $components = ($components | Select-Object -Unique) -join ','
         $bytes = [System.Text.Encoding]::UTF8.GetBytes($components)
         $hash = [System.Security.Cryptography.SHA256]::Create().ComputeHash($bytes)
         $componentHash = ([System.BitConverter]::ToString($hash).Replace('-', '').Substring(0, 16)).ToLower()

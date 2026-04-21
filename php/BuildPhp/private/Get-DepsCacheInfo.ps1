@@ -5,7 +5,7 @@ function Get-DepsCacheInfo {
     .PARAMETER PhpVersion
         PHP version (e.g., 8.4.18 or master).
     .PARAMETER Arch
-        Target architecture: x86 or x64.
+        Target architecture: x86, x64, or arm64.
     .PARAMETER LibsBuildRuns
         Optional comma-separated workflow run IDs used for library overrides.
     .PARAMETER IncludeDefaultRunsKey
@@ -18,7 +18,7 @@ function Get-DepsCacheInfo {
         [ValidateNotNullOrEmpty()]
         [string] $PhpVersion,
         [Parameter(Mandatory=$true)]
-        [ValidateSet('x86','x64')]
+        [ValidateSet('x86','x64','arm64')]
         [string] $Arch,
         [Parameter(Mandatory=$false)]
         [string] $LibsBuildRuns = '',
@@ -47,10 +47,13 @@ function Get-DepsCacheInfo {
             $runsKey = 'default'
         }
 
-        $vsVersion = (Get-VsVersion -PhpVersion $PhpVersion).vs
+        $vsVersion = (Get-VsVersion -PhpVersion $PhpVersion -Arch $Arch).vs
         $packageData = Get-PhpDepsPackages -PhpVersion $PhpVersion -VsVersion $vsVersion -Arch $Arch
 
         $cacheKey = "deps-$depsPhpVersion-$Arch"
+        if ($packageData.DownloadArch -ne $Arch) {
+            $cacheKey += "-deps-$($packageData.DownloadArch)"
+        }
         if ($runsKey) {
             $cacheKey += "-$runsKey"
         }

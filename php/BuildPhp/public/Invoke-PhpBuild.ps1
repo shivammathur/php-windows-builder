@@ -15,7 +15,7 @@ function Invoke-PhpBuild {
         [string] $PhpVersion = '',
         [Parameter(Mandatory = $true, Position=1, HelpMessage='PHP Architecture')]
         [ValidateNotNull()]
-        [ValidateSet('x86', 'x64')]
+        [ValidateSet('x86', 'x64', 'arm64')]
         [string] $Arch,
         [Parameter(Mandatory = $true, Position=2, HelpMessage='PHP Build Type')]
         [ValidateNotNull()]
@@ -31,7 +31,7 @@ function Invoke-PhpBuild {
             $fetchSrc = $False
             $PhpVersion = Get-SourcePhpVersion
         }
-        $VsConfig = (Get-VsVersion -PhpVersion $PhpVersion)
+        $VsConfig = (Get-VsVersion -PhpVersion $PhpVersion -Arch $Arch)
         if($null -eq $VsConfig.vs) {
             throw "PHP version $PhpVersion is not supported."
         }
@@ -47,7 +47,7 @@ function Invoke-PhpBuild {
         try {
             Set-Location "$buildDirectory"
 
-            Add-BuildRequirements -PhpVersion $PhpVersion -Arch $Arch -FetchSrc:$fetchSrc
+            Add-BuildRequirements -PhpVersion $PhpVersion -Arch $Arch -VsVersion $VsConfig.vs -FetchSrc:$fetchSrc
 
             $configDirectory = Join-Path $PSScriptRoot "..\config\$($VsConfig.vs)\$Arch"
             $configBatch = Join-Path $configDirectory "config.$Ts.bat"

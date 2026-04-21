@@ -2,61 +2,104 @@
   "7.0": {
     "vs": "2015",
     "os": "windows-2012",
+    "os_by_arch": {
+      "default": "windows-2012"
+    },
     "type": "self-hosted"
   },
   "7.1": {
     "vs": "2015",
     "os": "windows-2012",
+    "os_by_arch": {
+      "default": "windows-2012"
+    },
     "type": "self-hosted"
   },
   "7.2": {
     "vs": "2022",
     "os": "windows-2022",
+    "os_by_arch": {
+      "default": "windows-2022"
+    },
     "type": "github-hosted"
   },
   "7.3": {
     "vs": "2022",
     "os": "windows-2022",
+    "os_by_arch": {
+      "default": "windows-2022"
+    },
     "type": "github-hosted"
   },
   "7.4": {
     "vs": "2022",
     "os": "windows-2022",
+    "os_by_arch": {
+      "default": "windows-2022"
+    },
     "type": "github-hosted"
   },
   "8.0": {
     "vs": "2022",
     "os": "windows-2022",
+    "os_by_arch": {
+      "default": "windows-2022",
+      "arm64": "windows-11-arm"
+    },
     "type": "github-hosted"
   },
   "8.1": {
     "vs": "2022",
     "os": "windows-2022",
+    "os_by_arch": {
+      "default": "windows-2022",
+      "arm64": "windows-11-arm"
+    },
     "type": "github-hosted"
   },
   "8.2": {
     "vs": "2022",
     "os": "windows-2022",
+    "os_by_arch": {
+      "default": "windows-2022",
+      "arm64": "windows-11-arm"
+    },
     "type": "github-hosted"
   },
   "8.3": {
     "vs": "2022",
     "os": "windows-2022",
+    "os_by_arch": {
+      "default": "windows-2022",
+      "arm64": "windows-11-arm"
+    },
     "type": "github-hosted"
   },
   "8.4": {
     "vs": "2022",
     "os": "windows-2022",
+    "os_by_arch": {
+      "default": "windows-2022",
+      "arm64": "windows-11-arm"
+    },
     "type": "github-hosted"
   },
   "8.5": {
     "vs": "2022",
     "os": "windows-2022",
+    "os_by_arch": {
+      "default": "windows-2022",
+      "arm64": "windows-11-arm"
+    },
     "type": "github-hosted"
   },
   "master": {
     "vs": "2022",
     "os": "windows-2022",
+    "os_by_arch": {
+      "default": "windows-2022",
+      "arm64": "windows-11-arm"
+    },
     "dev": true,
     "type": "github-hosted"
   }

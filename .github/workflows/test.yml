@@ -8,30 +8,38 @@ on:
         required: true
 
 jobs:
+  set-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      test-matrix: ${{ steps.set-matrix.outputs.test-matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Generate test matrix
+        id: set-matrix
+        shell: pwsh
+        run: |
+          & ./.github/scripts/get-php-workflow-matrix.ps1 -PhpVersion '${{ inputs.php-version }}'
+
   php:
+    needs: set-matrix
     strategy:
-      matrix:
-        arch: [x64, x86]
-        ts: [nts, ts]
-        opcache: [opcache, nocache]
-        test-type: [php, ext]
-    runs-on: windows-2022
+      matrix: ${{ fromJson(needs.set-matrix.outputs.test-matrix) }}
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
       - name: Get Cache Key
         id: cache-key
+        shell: pwsh
         run: |
-          $pv = '${{inputs.php-version}}'
-          if('${{inputs.php-version}}' -ne 'master') {
-            $pv = '${{inputs.php-version}}'.Split('.')[0..1] -join '.'
-          }
-          $vsVersion = (Get-Content -Raw -Path (Join-Path $(pwd).Path '\php\BuildPhp\config\vs.json') | ConvertFrom-Json).php.$pv
-          $packagesListUrl = "https://downloads.php.net/~windows/php-sdk/deps/series/packages-$pv-$vsVersion-${{ matrix.arch }}-staging.txt"
-          Invoke-WebRequest -OutFile packages.txt -Uri $packagesListUrl
-          Add-Content -Value "cache-key=deps-$pv-${{ matrix.arch }}" -Path $env:GITHUB_OUTPUT
-          Add-Content -Value "cache-dir=C:\deps-$pv-${{ matrix.arch }}" -Path $env:GITHUB_OUTPUT
+          Import-Module (Join-Path $(pwd).Path '\php\BuildPhp') -Force
+          $cacheInfo = Get-DepsCacheInfo -PhpVersion '${{inputs.php-version}}' -Arch '${{ matrix.arch }}'
+          Set-Content -Path packages.txt -Value ($cacheInfo.Packages -join "`n")
+          Add-Content -Value "cache-key=$($cacheInfo.CacheKey)" -Path $env:GITHUB_OUTPUT
+          Add-Content -Value "cache-dir=$($cacheInfo.CacheDir)" -Path $env:GITHUB_OUTPUT
 
       - name: Cache Deps
         id: cache-deps
@@ -52,10 +60,10 @@ jobs:
                           -Arch ${{matrix.arch}} `
                           -Ts ${{matrix.ts}} `
                           -Opcache ${{matrix.opcache}} `
-                          -TestType ${{matrix.test-type}}
+                          -TestType ${{matrix.test_type}}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: test-results-${{matrix.arch}}-${{matrix.ts}}-${{matrix.opcache}}-${{matrix.test-type}}
-          path: test-${{matrix.arch}}-${{matrix.ts}}-${{matrix.opcache}}-${{matrix.test-type}}.xml
+          name: test-results-${{matrix.arch}}-${{matrix.ts}}-${{matrix.opcache}}-${{matrix.test_type}}
+          path: test-${{matrix.arch}}-${{matrix.ts}}-${{matrix.opcache}}-${{matrix.test_type}}.xml

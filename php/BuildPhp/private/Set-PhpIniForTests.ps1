@@ -8,6 +8,8 @@ function Set-PhpIniForTests {
         Opcache
     .PARAMETER TestType
         Test type
+    .PARAMETER Arch
+        Target architecture
     #>
     [OutputType()]
     param (
@@ -20,7 +22,10 @@ function Set-PhpIniForTests {
         [string] $Opcache,
         [Parameter(Mandatory = $true, Position=2, HelpMessage='Test type')]
         [ValidateSet('ext', 'php')]
-        [string] $TestType
+        [string] $TestType,
+        [Parameter(Mandatory = $true, Position=3, HelpMessage='Target architecture')]
+        [ValidateSet('x86', 'x64', 'arm64')]
+        [string] $Arch
     )
     begin {
     }

@@ -82,6 +82,7 @@ Function Get-ExtensionConfig {
                 ts = $Ts
                 vs_version = $VsVersion
                 vs_toolset = $VsToolset
+                dependency_arch = $Arch
                 debug_symbols = $True
                 options = @()
                 php_libraries = @()
@@ -90,6 +91,14 @@ Function Get-ExtensionConfig {
                 extensions = @()
                 docs = @()
                 build_directory = ""
+            }
+            if ($Arch -eq 'arm64') {
+                try {
+                    Get-File -Url "https://downloads.php.net/~windows/php-sdk/deps/$VsVersion/$Arch" | Out-Null
+                } catch {
+                    $config.dependency_arch = 'x64'
+                    Write-Warning "Native ARM64 PHP dependency packages are not available yet. Falling back to x64 packages."
+                }
             }
             $composerJson = $null
             if((-not(Test-Path composer.json)) -and (Test-Path $PSScriptRoot\..\config\stubs\$packageName.composer.json)) {
@@ -214,7 +223,7 @@ Function Get-ExtensionConfig {
             }
 
             if($Libraries.Count -gt 0) {
-                $phpSeries = Get-File -Url "https://downloads.php.net/~windows/php-sdk/deps/$VsVersion/$Arch"
+                $phpSeries = Get-File -Url "https://downloads.php.net/~windows/php-sdk/deps/$VsVersion/$($config.dependency_arch)"
                 $extensionSeries = Get-File -Url "https://downloads.php.net/~windows/pecl/deps"
                 $extensionArchivesSeries = Get-File -Url "https://downloads.php.net/~windows/pecl/deps/archives"
             }
@@ -269,7 +278,7 @@ Function Get-ExtensionConfig {
                 }
             }
 
-            $config.build_directory = if ($Arch -eq "x64") { "x64\" } else { "" }
+            $config.build_directory = if ($Arch -ne "x86") { "$Arch\" } else { "" }
             $config.build_directory += "Release"
             if ($Ts -eq "ts") { $config.build_directory += "_TS" }
             Set-GAGroup start
