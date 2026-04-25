@@ -31,11 +31,12 @@ function Set-SnmpTestEnvironment {
         $updated = [System.Text.RegularExpressions.Regex]::Replace(
             $content,
             '^exec\s+HexTest\s+.*$',
-            [System.Text.RegularExpressions.Regex]::Escape($newLine).Replace('\/','/'),
+            [System.Text.RegularExpressions.MatchEvaluator] { param($match) $newLine },
             [System.Text.RegularExpressions.RegexOptions]::Multiline
         )
         if ($updated -ne $content) {
-            Set-Content -LiteralPath $confPath -Value $updated -Encoding UTF8
+            $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+            [System.IO.File]::WriteAllText($confPath, $updated, $utf8NoBom)
         }
 
         $snmpd = Join-Path $env:DEPS_DIR 'bin\snmpd.exe'
@@ -50,6 +51,7 @@ function Set-SnmpTestEnvironment {
         if(-not(Test-Path snmpd_running)) {
             Start-Process -FilePath $snmpd -ArgumentList @('-C','-c', $confPath, '-Ln') -WindowStyle Hidden
             Set-Content -Path snmpd_running -Value "running" -Encoding ASCII
+            Start-Sleep -Seconds 2
         }
     }
 }

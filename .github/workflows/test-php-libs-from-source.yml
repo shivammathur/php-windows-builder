@@ -21,6 +21,12 @@ jobs:
         ts: [nts, ts]
     runs-on: windows-2022
     steps:
+      - name: Configure PHP source line endings
+        shell: pwsh
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+
       - name: Checkout PHP source
         uses: actions/checkout@v6
         with:

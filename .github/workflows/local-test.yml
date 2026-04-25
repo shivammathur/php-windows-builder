@@ -17,6 +17,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Configure PHP source line endings
+        shell: pwsh
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+
       - name: Resolve latest PHP 8.5 and Xdebug releases
         id: versions
         shell: pwsh
