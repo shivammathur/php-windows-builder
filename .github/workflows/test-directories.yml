@@ -1,0 +1,164 @@
+name: Test PHP Directories
+run-name: Test PHP ${{ inputs.php-version }} directories
+on:
+  workflow_dispatch:
+    inputs:
+      php-version:
+        description: 'PHP version to test'
+        required: true
+      test-directories:
+        description: 'Comma or newline-separated test directories'
+        required: true
+      arch:
+        type: choice
+        options: [x64, x86]
+        description: 'Architecture'
+        required: true
+        default: x64
+      ts:
+        type: choice
+        options: [nts, ts]
+        description: 'Thread safety'
+        required: true
+        default: nts
+      opcache:
+        type: choice
+        options: [nocache, opcache]
+        description: 'Opcache mode'
+        required: true
+        default: nocache
+      test-type:
+        type: choice
+        options: [ext, php]
+        description: 'Test type'
+        required: true
+        default: ext
+      php-build-run-id:
+        description: 'Optional php-windows-builder run ID containing merged artifacts'
+        required: false
+      libs-build-runs:
+        description: 'Comma-separated winlibs/winlib-builder run IDs used by the PHP build artifacts'
+        required: false
+      source-repository:
+        description: 'php-src repository to source tests from when source-ref is provided'
+        required: true
+        default: php/php-src
+      source-ref:
+        description: 'Optional branch, tag, or SHA in the php-src repository'
+        required: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  set-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      test-matrix: ${{ steps.set-matrix.outputs.test-matrix }}
+    steps:
+      - name: Generate test directory matrix
+        id: set-matrix
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $directories = @(
+            '${{ inputs.test-directories }}' -split "[,`r`n]+" |
+              ForEach-Object { $_.Trim() } |
+              Where-Object { $_ -ne '' }
+          )
+          if ($directories.Count -eq 0) {
+            throw 'No test directories were provided.'
+          }
+
+          $include = @()
+          foreach ($directory in $directories) {
+            $name = ($directory -replace '[^A-Za-z0-9_.-]+', '-').Trim('-')
+            if ([string]::IsNullOrWhiteSpace($name)) {
+              $name = 'tests'
+            }
+            $include += [PSCustomObject]@{
+              directory = $directory
+              name = $name
+            }
+          }
+
+          $json = ConvertTo-Json @{ include = $include } -Compress -Depth 4
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "test-matrix=$json"
+
+  test:
+    needs: set-matrix
+    name: ${{ inputs.php-version }} ${{ matrix.name }} ${{ inputs.arch }} ${{ inputs.ts }} ${{ inputs.opcache }}
+    runs-on: windows-2022
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.set-matrix.outputs.test-matrix) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Download PHP build artifacts
+        if: ${{ inputs.php-build-run-id != '' }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.php-build-run-id }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          gh run download $env:RUN_ID `
+            -R $env:GITHUB_REPOSITORY `
+            -n artifacts `
+            -D .
+          Get-ChildItem -Filter '*.zip' | Sort-Object Name | Select-Object Name, Length
+
+      - name: Get Cache Key
+        id: cache-key
+        shell: pwsh
+        run: |
+          Import-Module (Join-Path $(pwd).Path '\php\BuildPhp') -Force
+          $cacheInfo = Get-DepsCacheInfo `
+            -PhpVersion '${{ inputs.php-version }}' `
+            -Arch '${{ inputs.arch }}' `
+            -LibsBuildRuns '${{ inputs.libs-build-runs }}' `
+            -IncludeDefaultRunsKey
+          Set-Content -Path packages.txt -Value ($cacheInfo.Packages -join "`n")
+          Add-Content -Value "cache-key=$($cacheInfo.CacheKey)" -Path $env:GITHUB_OUTPUT
+          Add-Content -Value "cache-dir=$($cacheInfo.CacheDir)" -Path $env:GITHUB_OUTPUT
+
+      - name: Cache Deps
+        id: cache-deps
+        uses: actions/cache@v5
+        with:
+          path: ${{ steps.cache-key.outputs.cache-dir }}
+          key: ${{ steps.cache-key.outputs.cache-key }}-${{ hashFiles('packages.txt') }}
+
+      - name: Run tests
+        shell: pwsh
+        env:
+          DEPS_DIR: ${{ steps.cache-key.outputs.cache-dir }}
+          DEPS_CACHE_HIT: ${{ steps.cache-deps.outputs.cache-hit }}
+          LIBS_BUILD_RUNS: ${{ inputs.libs-build-runs }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          Import-Module (Join-Path $(pwd).Path '\php\BuildPhp') -Force
+          Invoke-PhpTests -PhpVersion '${{ inputs.php-version }}' `
+                          -Arch '${{ inputs.arch }}' `
+                          -Ts '${{ inputs.ts }}' `
+                          -Opcache '${{ inputs.opcache }}' `
+                          -TestType '${{ inputs.test-type }}' `
+                          -SourceRepository '${{ inputs.source-repository }}' `
+                          -SourceRef '${{ inputs.source-ref }}' `
+                          -TestDirectories '${{ matrix.directory }}' `
+                          -FailOnError
+
+      - name: Upload test results
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-${{ inputs.php-version }}-${{ matrix.name }}-${{ inputs.arch }}-${{ inputs.ts }}-${{ inputs.opcache }}
+          path: |
+            test-${{ inputs.arch }}-${{ inputs.ts }}-${{ inputs.opcache }}-${{ inputs.test-type }}.xml
+            test-${{ inputs.arch }}-${{ inputs.ts }}-${{ inputs.opcache }}-${{ inputs.test-type }}.log
+          if-no-files-found: ignore

@@ -92,6 +92,7 @@
         'Set-OdbcTestEnvironment',
         'Set-OpenSslTestEnvironment',
         'Set-PgSqlTestEnvironment',
+        'Set-PhpExtTestEnvironment',
         'Set-PhpIniForTests',
         'Set-SnmpTestEnvironment',
 

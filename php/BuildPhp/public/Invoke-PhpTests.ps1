@@ -16,6 +16,10 @@ function Invoke-PhpTests {
         php-src repository to source tests from when SourceRef is provided.
     .PARAMETER SourceRef
         Optional branch, tag, or SHA in the custom php-src repository.
+    .PARAMETER TestDirectories
+        Optional test directories to run instead of the configured test list.
+    .PARAMETER FailOnError
+        Fail when run-tests.php returns a non-zero exit code.
     #>
     [OutputType()]
     param (
@@ -40,7 +44,11 @@ function Invoke-PhpTests {
         [Parameter(Mandatory = $false, Position=5, HelpMessage='php-src repository to source tests from when SourceRef is provided')]
         [string] $SourceRepository = 'php/php-src',
         [Parameter(Mandatory = $false, Position=6, HelpMessage='Optional branch, tag, or SHA in the custom php-src repository')]
-        [string] $SourceRef = ''
+        [string] $SourceRef = '',
+        [Parameter(Mandatory = $false, Position=7, HelpMessage='Optional test directories')]
+        [string[]] $TestDirectories = @(),
+        [Parameter(Mandatory = $false, Position=8, HelpMessage='Fail on test errors')]
+        [switch] $FailOnError
     )
     begin {
     }
@@ -93,19 +101,14 @@ function Invoke-PhpTests {
 
         Set-Location "$testsDirectory"
 
-        Get-TestsList -OutputFile "$TestType-tests-to-run.txt" -Type $TestType
+        Get-TestsList -OutputFile "$TestType-tests-to-run.txt" -Type $TestType -TestDirectories $TestDirectories
 
         $settings = Get-TestSettings -PhpVersion $PhpVersion
 
         if($TestType -eq "ext") {
-            Set-MySqlTestEnvironment
-            Set-PgSqlTestEnvironment
-            Set-OdbcTestEnvironment
-            Set-MsSqlTestEnvironment
-            Set-FirebirdTestEnvironment
-            Set-OpenSslTestEnvironment -PhpBinDirectory "$buildDirectory\phpbin"
-            Set-EnchantTestEnvironment
-            Set-SnmpTestEnvironment -TestsDirectoryPath "$buildDirectory\$testsDirectory"
+            Set-PhpExtTestEnvironment -TestDirectories $TestDirectories `
+                                      -BuildDirectory $buildDirectory `
+                                      -TestsDirectory $testsDirectory
         }
 
         $testTimeout = if ($TestType -eq 'ext') { '300' } else { '120' }
@@ -156,6 +159,7 @@ function Invoke-PhpTests {
         }
 
         & $buildDirectory\phpbin\php.exe @params 2>&1 | Tee-Object -FilePath $testLogFile | Out-Host
+        $testExitCode = $LASTEXITCODE
 
         if(Test-Path $testResultFile) {
             Copy-Item $testResultFile $currentDirectory -Force
@@ -163,7 +167,15 @@ function Invoke-PhpTests {
             Write-Warning "Test results file was not generated: $testResultFile"
         }
 
+        if(Test-Path $testLogFile) {
+            Copy-Item $testLogFile $currentDirectory -Force
+        }
+
         Set-Location "$currentDirectory"
+
+        if($FailOnError -and $testExitCode -ne 0) {
+            throw "PHP tests failed for $Arch-$Ts-$Opcache-$TestType with exit code $testExitCode"
+        }
     }
     end {
     }
