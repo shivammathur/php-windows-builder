@@ -2,6 +2,7 @@ ext\com_dotnet\tests
 ext\curl\tests
 ext\date\tests
 ext\dom\tests
+ext\enchant\tests
 ext\hash\tests
 ext\intl\tests
 ext\json\tests
