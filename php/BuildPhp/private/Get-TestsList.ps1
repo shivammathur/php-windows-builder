@@ -31,16 +31,32 @@ function Get-TestsList {
             $directories = Get-Content "$PSScriptRoot\..\config\${Type}_test_directories"
         }
 
-        foreach ($line in $directories) {
-            $path = "$line".Trim()
-            if ([string]::IsNullOrWhiteSpace($path)) {
-                continue
-            }
+        $testsFound = 0
+        $outputFilePath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputFile)
+        $writer = [System.IO.StreamWriter]::new($outputFilePath, $false)
+        try {
+            foreach ($line in $directories) {
+                $path = "$line".Trim()
+                if ([string]::IsNullOrWhiteSpace($path)) {
+                    continue
+                }
 
-            $ttr = Get-ChildItem -Path $path -Filter "*.phpt" -Recurse
-            foreach ($t in $ttr) {
-                Add-Content $OutputFile $t.FullName
+                if (-not (Test-Path -Path $path -PathType Container)) {
+                    Write-Host "Skipping missing test directory: $path"
+                    continue
+                }
+
+                Get-ChildItem -Path $path -Filter "*.phpt" -Recurse | ForEach-Object {
+                    $testsFound++
+                    $writer.WriteLine($_.FullName)
+                }
             }
+        } finally {
+            $writer.Dispose()
+        }
+
+        if ($testsFound -eq 0) {
+            throw "No tests were found in the configured $Type test directories."
         }
     }
     end {
