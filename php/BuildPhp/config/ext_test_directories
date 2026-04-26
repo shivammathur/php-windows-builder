@@ -44,7 +44,6 @@ ext\reflection\tests
 ext\session\tests
 ext\shmop\tests
 ext\simplexml\tests
-ext\snmp\tests
 ext\soap\tests
 ext\sockets\tests
 ext\sodium\tests

@@ -108,7 +108,8 @@ function Invoke-PhpTests {
         if($TestType -eq "ext") {
             Set-PhpExtTestEnvironment -TestDirectories $TestDirectories `
                                       -BuildDirectory $buildDirectory `
-                                      -TestsDirectory $testsDirectory
+                                      -TestsDirectory $testsDirectory `
+                                      -Arch $Arch
         }
 
         $testTimeout = if ($TestType -eq 'ext') { '300' } else { '120' }

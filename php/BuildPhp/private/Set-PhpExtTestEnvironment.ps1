@@ -8,6 +8,8 @@ function Set-PhpExtTestEnvironment {
         PHP build directory.
     .PARAMETER TestsDirectory
         PHP tests directory name.
+    .PARAMETER Arch
+        PHP architecture.
     #>
     [CmdletBinding()]
     param (
@@ -20,11 +22,19 @@ function Set-PhpExtTestEnvironment {
         [Parameter(Mandatory = $true, Position=2, HelpMessage='PHP tests directory')]
         [ValidateNotNull()]
         [ValidateLength(1, [int]::MaxValue)]
-        [string] $TestsDirectory
+        [string] $TestsDirectory,
+        [Parameter(Mandatory = $true, Position=3, HelpMessage='PHP architecture')]
+        [ValidateSet('x86', 'x64')]
+        [string] $Arch
     )
     process {
         $runAllExtSetup = $null -eq $TestDirectories -or $TestDirectories.Count -eq 0
-        $testDirectoryText = (@($TestDirectories) -join ';').ToLowerInvariant()
+        $effectiveTestDirectories = if($runAllExtSetup) {
+            Get-Content "$PSScriptRoot\..\config\ext_test_directories"
+        } else {
+            $TestDirectories
+        }
+        $testDirectoryText = (@($effectiveTestDirectories) -join ';').ToLowerInvariant()
 
         $testEnvironmentSetups = @(
             [pscustomobject] @{
@@ -50,7 +60,9 @@ function Set-PhpExtTestEnvironment {
             [pscustomobject] @{
                 Match = @('firebird', 'interbase')
                 Command = 'Set-FirebirdTestEnvironment'
-                Parameters = @{}
+                Parameters = @{
+                    Arch = $Arch
+                }
             },
             [pscustomobject] @{
                 Match = @('openssl')
@@ -73,13 +85,9 @@ function Set-PhpExtTestEnvironment {
             }
         )
 
-        $selectedSetups = if($runAllExtSetup) {
-            $testEnvironmentSetups
-        } else {
-            $testEnvironmentSetups | Where-Object {
-                $setup = $_
-                @($setup.Match | Where-Object { $testDirectoryText.Contains($_) }).Count -gt 0
-            }
+        $selectedSetups = $testEnvironmentSetups | Where-Object {
+            $setup = $_
+            @($setup.Match | Where-Object { $testDirectoryText.Contains($_) }).Count -gt 0
         }
 
         foreach($setup in $selectedSetups) {

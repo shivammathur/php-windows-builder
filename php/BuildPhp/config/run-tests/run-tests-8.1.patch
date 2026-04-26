@@ -472,6 +472,17 @@
                  break;
              default:
                  send_message($workerSock, [
+@@ -3549,7 +3858,9 @@
+
+             if (!empty($suite_name)) {
+                 foreach ($suite['files'] as $file) {
+-                    $result .= $this->rootSuite['files'][$file]['xml'];
++                    if (isset($this->rootSuite['files'][$file]['xml'])) {
++                        $result .= $this->rootSuite['files'][$file]['xml'];
++                    }
+                 }
+             }
+
 @@ -3571,6 +3880,8 @@
          }
 
@@ -488,4 +499,13 @@
 +        $this->initSuite($suite);
          $this->suites[$suite][$param] += $value;
      }
+
+@@ -3753,7 +4064,7 @@
+         $dest['test_skip']  += $source['test_skip'];
+         $dest['test_warn']  += $source['test_warn'];
+         $dest['execution_time'] += $source['execution_time'];
+-        $dest['files'] += $source['files'];
++        $dest['files'] = array_replace($dest['files'], $source['files']);
+     }
+ }
 
