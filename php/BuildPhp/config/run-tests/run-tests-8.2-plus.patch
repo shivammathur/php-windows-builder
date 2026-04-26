@@ -1,6 +1,6 @@
 --- run-tests.php
 +++ run-tests.php
-@@ -140,6 +140,275 @@
+@@ -140,6 +140,288 @@
   * code that was previously found at the top level. It could and should be
   * refactored to be smaller and more manageable.
   */
@@ -105,6 +105,19 @@
 +
 +        if (function_exists('junit_enabled') && junit_enabled()) {
 +            junit_mark_test_as('BORK', $shortname, $shortname, null, $message);
++        }
++    }
++
++    function buildphp_worker_recovery_save_junit_on_error($message)
++    {
++        if (($GLOBALS['workerID'] ?? 0) !== 0 || !buildphp_worker_recovery_has_object_junit()) {
++            return;
++        }
++
++        $junit = $GLOBALS['junit'];
++        if ($junit->isEnabled()) {
++            $junit->markTestAs('BORK', 'run-tests.php', 'Infrastructure error', null, $message);
++            $junit->saveXML();
 +        }
 +    }
 +
@@ -278,7 +291,7 @@
      /* This list was derived in a naïve mechanical fashion. If a member
 @@ -1285,22 +1553,20 @@
      }
-
+ 
      foreach ($test_files as $name) {
 -        if (is_array($name)) {
 -            $index = "# $name[1]: $name[0]";
@@ -295,7 +308,7 @@
 +        $index = buildphp_worker_recovery_format_test_index($name, $redir_tested);
 +        $name = buildphp_worker_recovery_get_result_test_name($name, $redir_tested);
          $test_idx++;
-
+ 
          if ($workerID) {
              $PHP_FAILED_TESTS = ['BORKED' => [], 'FAILED' => [], 'WARNED' => [], 'LEAKED' => [], 'XFAILED' => [], 'XLEAKED' => [], 'SLOW' => []];
              ob_start();
@@ -306,7 +319,7 @@
 +                "index" => $index,
 +            ]);
          }
-
+ 
          $result = run_test($php, $name, $env);
 @@ -1312,12 +1578,15 @@
              if ($workerID) {
@@ -324,18 +337,18 @@
 +                buildphp_worker_recovery_reset_junit();
                  continue;
              }
-
+ 
 @@ -1345,6 +1614,8 @@
-
+ 
      $workerProcs = [];
      $workerSocks = [];
 +    $workerBatches = [];
 +    $workerCrashRetryTests = [];
-
+ 
      // Each test may specify a list of conflict keys. While a test that conflicts with
      // key K is running, no other test that conflicts with K may run. Conflict keys are
 @@ -1486,6 +1756,15 @@
-
+ 
  escape:
      while ($test_files || $sequentialTests || $testsInProgress > 0) {
 +        if (!$workerSocks) {
@@ -378,7 +391,7 @@
                      error("Worker $i died unexpectedly");
                  }
 @@ -1520,19 +1829,12 @@
-
+ 
                      switch ($message["type"]) {
                          case "tests_finished":
 -                            $testsInProgress--;
@@ -434,9 +447,9 @@
                                  $PHP_FAILED_TESTS[$category] = array_merge($PHP_FAILED_TESTS[$category], $tests);
                              }
 @@ -1630,4 +1940,12 @@
-
+ 
      kill_children($workerProcs);
-
+ 
 +    if ($workerCrashRetryTests) {
 +        echo "Retrying " . count($workerCrashRetryTests) . " tests interrupted by worker crashes serially...\n";
 +        $savedWorkers = $workers;
@@ -458,15 +471,32 @@
                  break;
              default:
                  send_message($workerSock, [
-@@ -3380,6 +3694,8 @@
+@@ -2942,6 +3269,7 @@
+ function error(string $message): void
+ {
+     echo "ERROR: {$message}\n";
++    buildphp_worker_recovery_save_junit_on_error($message);
+     exit(1);
+ }
+ 
+@@ -3353,5 +3681,7 @@
+             if (!empty($suite_name)) {
+                 foreach ($suite['files'] as $file) {
+-                    $result .= $this->rootSuite['files'][$file]['xml'];
++                    if (isset($this->rootSuite['files'][$file]['xml'])) {
++                        $result .= $this->rootSuite['files'][$file]['xml'];
++                    }
+                 }
+             }
+@@ -3380,6 +3708,8 @@
          }
-
+ 
          $suite = $this->getSuiteName($file_name);
 +        $this->initSuite($suite);
 +        $this->suites[$suite]['files'][$file_name] = $file_name;
-
+ 
          $this->record($suite, 'test_total');
-
+ 
 @@ -3428,6 +3744,7 @@
      private function record(string $suite, string $param, $value = 1): void
      {
@@ -474,4 +504,12 @@
 +        $this->initSuite($suite);
          $this->suites[$suite][$param] += $value;
      }
-
+ 
+@@ -3473,6 +3791,6 @@
+         $dest['test_skip']  += $source['test_skip'];
+         $dest['test_warn']  += $source['test_warn'];
+         $dest['execution_time'] += $source['execution_time'];
+-        $dest['files'] += $source['files'];
++        $dest['files'] = array_replace($dest['files'], $source['files']);
+     }
+ }

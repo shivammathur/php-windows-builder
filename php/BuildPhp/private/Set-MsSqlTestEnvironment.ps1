@@ -11,9 +11,26 @@ function Set-MsSqlTestEnvironment {
         }
 
         $serviceName = 'MSSQL$SQLEXPRESS'
-        & choco install sql-server-express -y --no-progress --install-arguments="/SECURITYMODE=SQL /SAPWD=Password12!"
-        if (@(0, 3010) -notcontains $LASTEXITCODE) {
-            throw "Failed to install SQL Server Express. choco exited with $LASTEXITCODE."
+        $installExitCode = $null
+        for($attempt = 1; $attempt -le 3; $attempt++) {
+            Write-Host "Installing SQL Server Express (attempt $attempt of 3)..."
+            & choco install sql-server-express -y --no-progress --install-arguments="/SECURITYMODE=SQL /SAPWD=Password12!"
+            $installExitCode = $LASTEXITCODE
+            if (@(0, 3010) -contains $installExitCode) {
+                break
+            }
+
+            $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+            if ($service) {
+                break
+            }
+
+            if ($attempt -lt 3) {
+                Start-Sleep -Seconds (15 * $attempt)
+            }
+        }
+        if (@(0, 3010) -notcontains $installExitCode -and -not (Get-Service -Name $serviceName -ErrorAction SilentlyContinue)) {
+            throw "Failed to install SQL Server Express. choco exited with $installExitCode."
         }
 
         $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
