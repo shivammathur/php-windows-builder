@@ -1,1 +1,1 @@
-cscript /nologo configure.js "--enable-snapshot-build" "--enable-debug-pack" "--disable-zts" "--enable-object-out-dir=../obj/" "--enable-com-dotnet=shared" "--without-analyzer" "--enable-pgi" %*
+cscript /nologo configure.js "--enable-snapshot-build" "--enable-debug-pack" "--disable-zts" "--enable-object-out-dir=../obj/" "--enable-com-dotnet=shared" "--with-dom=shared" "--enable-xmlreader=shared" "--without-analyzer" "--enable-pgi" %*
