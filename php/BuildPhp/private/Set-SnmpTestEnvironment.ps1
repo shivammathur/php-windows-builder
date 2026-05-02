@@ -17,6 +17,19 @@ function Set-SnmpTestEnvironment {
         }
 
         $env:MIBDIRS = Join-Path $env:DEPS_DIR 'share\mibs'
+        $buildDirectory = Split-Path -Path $TestsDirectoryPath -Parent
+        $snmpArtifactsDirectory = Join-Path $buildDirectory 'snmp'
+        $snmpdStatePath = Join-Path $snmpArtifactsDirectory 'snmpd-state.json'
+        $snmpdLogPath = Join-Path $snmpArtifactsDirectory 'snmpd.log'
+        $snmpdStdOutPath = Join-Path $snmpArtifactsDirectory 'snmpd.stdout.log'
+        $snmpdStdErrPath = Join-Path $snmpArtifactsDirectory 'snmpd.stderr.log'
+
+        New-Item -Path $snmpArtifactsDirectory -ItemType Directory -Force > $null 2>&1
+
+        $env:PHP_WINDOWS_BUILDER_SNMPD_STATE = $snmpdStatePath
+        $env:PHP_WINDOWS_BUILDER_SNMPD_LOG = $snmpdLogPath
+        $env:PHP_WINDOWS_BUILDER_SNMPD_STDOUT = $snmpdStdOutPath
+        $env:PHP_WINDOWS_BUILDER_SNMPD_STDERR = $snmpdStdErrPath
 
         $confPath = Join-Path $TestsDirectoryPath 'ext\snmp\tests\snmpd.conf'
         if (-not (Test-Path -LiteralPath $confPath)) {
@@ -48,10 +61,65 @@ function Set-SnmpTestEnvironment {
                 throw "snmpd.exe not found at $snmpd"
             }
         }
-        if(-not(Test-Path snmpd_running)) {
-            Start-Process -FilePath $snmpd -ArgumentList @('-C','-c', $confPath, '-Ln') -WindowStyle Hidden
-            Set-Content -Path snmpd_running -Value "running" -Encoding ASCII
-            Start-Sleep -Seconds 2
+        $existingProcess = $null
+        if (Test-Path -LiteralPath $snmpdStatePath) {
+            try {
+                $snmpdState = Get-Content -LiteralPath $snmpdStatePath -Raw -Encoding UTF8 | ConvertFrom-Json
+                if ($null -ne $snmpdState -and $null -ne $snmpdState.Pid) {
+                    $existingProcess = Get-Process -Id ([int] $snmpdState.Pid) -ErrorAction SilentlyContinue
+                }
+            } catch {
+                Write-Warning "Unable to read SNMP state file at ${snmpdStatePath}: $($_.Exception.Message)"
+            }
+        }
+
+        if ($null -ne $existingProcess) {
+            $env:PHP_WINDOWS_BUILDER_SNMPD_PID = [string] $existingProcess.Id
+            return
+        }
+
+        foreach ($diagnosticPath in @($snmpdLogPath, $snmpdStdOutPath, $snmpdStdErrPath)) {
+            if (Test-Path -LiteralPath $diagnosticPath) {
+                Remove-Item -LiteralPath $diagnosticPath -Force
+            }
+        }
+
+        $snmpdProcess = Start-Process -FilePath $snmpd `
+                                      -ArgumentList @('-f', '-C', '-c', $confPath, '-Lf', $snmpdLogPath) `
+                                      -RedirectStandardOutput $snmpdStdOutPath `
+                                      -RedirectStandardError $snmpdStdErrPath `
+                                      -WindowStyle Hidden `
+                                      -PassThru
+
+        Start-Sleep -Seconds 1
+
+        $env:PHP_WINDOWS_BUILDER_SNMPD_PID = [string] $snmpdProcess.Id
+        [pscustomobject] @{
+            Pid = $snmpdProcess.Id
+            ConfPath = $confPath
+            LogPath = $snmpdLogPath
+            StdOutPath = $snmpdStdOutPath
+            StdErrPath = $snmpdStdErrPath
+            StartedAtUtc = [DateTime]::UtcNow.ToString('o')
+        } | ConvertTo-Json -Compress | Set-Content -LiteralPath $snmpdStatePath -Encoding UTF8
+
+        if ($snmpdProcess.HasExited) {
+            $errorDetails = @()
+            foreach ($diagnosticPath in @($snmpdLogPath, $snmpdStdErrPath, $snmpdStdOutPath)) {
+                if (Test-Path -LiteralPath $diagnosticPath) {
+                    $tail = Get-Content -LiteralPath $diagnosticPath -Tail 40
+                    if ($tail.Count -gt 0) {
+                        $errorDetails += "[$diagnosticPath]`n$($tail -join [Environment]::NewLine)"
+                    }
+                }
+            }
+
+            $message = "snmpd exited immediately after startup. See diagnostics in $snmpArtifactsDirectory."
+            if ($errorDetails.Count -gt 0) {
+                $message = "$message`n$($errorDetails -join [Environment]::NewLine)"
+            }
+
+            throw $message
         }
     }
 }

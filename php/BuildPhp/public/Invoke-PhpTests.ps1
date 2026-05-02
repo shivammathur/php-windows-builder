@@ -159,20 +159,62 @@ function Invoke-PhpTests {
             Remove-Item $testLogFile -Force
         }
 
-        & $buildDirectory\phpbin\php.exe @params 2>&1 | Tee-Object -FilePath $testLogFile | Out-Host
-        $testExitCode = $LASTEXITCODE
+        try {
+            & $buildDirectory\phpbin\php.exe @params 2>&1 | Tee-Object -FilePath $testLogFile | Out-Host
+            $testExitCode = $LASTEXITCODE
 
-        if(Test-Path $testResultFile) {
-            Copy-Item $testResultFile $currentDirectory -Force
-        } else {
-            Write-Warning "Test results file was not generated: $testResultFile"
+            if(Test-Path $testResultFile) {
+                Copy-Item $testResultFile $currentDirectory -Force
+            } else {
+                Write-Warning "Test results file was not generated: $testResultFile"
+            }
+
+            if(Test-Path $testLogFile) {
+                Copy-Item $testLogFile $currentDirectory -Force
+            }
+        } finally {
+            if ($TestType -eq 'ext') {
+                $snmpdPid = $env:PHP_WINDOWS_BUILDER_SNMPD_PID
+                $snmpdLog = $env:PHP_WINDOWS_BUILDER_SNMPD_LOG
+                $snmpdStdOut = $env:PHP_WINDOWS_BUILDER_SNMPD_STDOUT
+                $snmpdStdErr = $env:PHP_WINDOWS_BUILDER_SNMPD_STDERR
+                $snmpdState = $env:PHP_WINDOWS_BUILDER_SNMPD_STATE
+
+                if (-not [string]::IsNullOrWhiteSpace($snmpdPid)) {
+                    $snmpdProcess = Get-Process -Id ([int] $snmpdPid) -ErrorAction SilentlyContinue
+                    if ($null -ne $snmpdProcess) {
+                        Write-Host "SNMPD process is running. PID=$($snmpdProcess.Id) CPU=$($snmpdProcess.CPU) WS=$($snmpdProcess.WorkingSet64)"
+                    } else {
+                        Write-Warning "SNMPD process $snmpdPid is not running at the end of the test job."
+                    }
+                } else {
+                    Write-Warning 'SNMPD PID was not recorded for this test job.'
+                }
+
+                foreach ($diagnosticFile in @(
+                    @{ Path = $snmpdState; Suffix = 'state.json' },
+                    @{ Path = $snmpdLog; Suffix = 'log' },
+                    @{ Path = $snmpdStdOut; Suffix = 'stdout.log' },
+                    @{ Path = $snmpdStdErr; Suffix = 'stderr.log' }
+                )) {
+                    if (-not [string]::IsNullOrWhiteSpace($diagnosticFile.Path) -and (Test-Path -LiteralPath $diagnosticFile.Path)) {
+                        $destination = Join-Path $currentDirectory ("snmpd-$Arch-$Ts-$Opcache-$TestType.$($diagnosticFile.Suffix)")
+                        Copy-Item -LiteralPath $diagnosticFile.Path -Destination $destination -Force
+                        Write-Host "Saved SNMP diagnostic: $destination"
+                    }
+                }
+
+                if (-not [string]::IsNullOrWhiteSpace($snmpdStdErr) -and (Test-Path -LiteralPath $snmpdStdErr)) {
+                    $stderrTail = Get-Content -LiteralPath $snmpdStdErr -Tail 40
+                    if ($stderrTail.Count -gt 0) {
+                        Write-Host 'SNMPD stderr tail:'
+                        $stderrTail | Out-Host
+                    }
+                }
+            }
+
+            Set-Location "$currentDirectory"
         }
-
-        if(Test-Path $testLogFile) {
-            Copy-Item $testLogFile $currentDirectory -Force
-        }
-
-        Set-Location "$currentDirectory"
 
         if($FailOnError -and $testExitCode -ne 0) {
             throw "PHP tests failed for $Arch-$Ts-$Opcache-$TestType with exit code $testExitCode"
