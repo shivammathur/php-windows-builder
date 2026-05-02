@@ -147,6 +147,15 @@ function Invoke-PhpTests {
         }
 
         $workers = $settings.workers
+        $workersOverride = $env:PHP_WINDOWS_BUILDER_TEST_WORKERS
+        if (-not [string]::IsNullOrWhiteSpace($workersOverride)) {
+            if ($workersOverride -notmatch '^\d+$') {
+                throw "PHP_WINDOWS_BUILDER_TEST_WORKERS must be a positive integer. Received: $workersOverride"
+            }
+
+            $workers = "-j$workersOverride"
+        }
+
         if($workers -ne "" -and -not $compatPatchApplied) {
             $workers = "-j2"
         }

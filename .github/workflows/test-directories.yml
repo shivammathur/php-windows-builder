@@ -27,6 +27,9 @@ on:
         description: 'Opcache mode'
         required: true
         default: nocache
+      workers:
+        description: 'Optional run-tests worker override'
+        required: false
       test-type:
         type: choice
         options: [ext, php]
@@ -139,6 +142,7 @@ jobs:
           DEPS_DIR: ${{ steps.cache-key.outputs.cache-dir }}
           DEPS_CACHE_HIT: ${{ steps.cache-deps.outputs.cache-hit }}
           LIBS_BUILD_RUNS: ${{ inputs.libs-build-runs }}
+          PHP_WINDOWS_BUILDER_TEST_WORKERS: ${{ inputs.workers }}
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           Import-Module (Join-Path $(pwd).Path '\php\BuildPhp') -Force
@@ -161,4 +165,5 @@ jobs:
           path: |
             test-${{ inputs.arch }}-${{ inputs.ts }}-${{ inputs.opcache }}-${{ inputs.test-type }}.xml
             test-${{ inputs.arch }}-${{ inputs.ts }}-${{ inputs.opcache }}-${{ inputs.test-type }}.log
+            snmpd-${{ inputs.arch }}-${{ inputs.ts }}-${{ inputs.opcache }}-${{ inputs.test-type }}*
           if-no-files-found: ignore
