@@ -10,6 +10,6 @@
   "8.3": {"runner": "run-tests.php", "compatPatch": "run-tests-8.2-plus.patch", "workers": "-j6", "progress": "--no-progress"},
   "8.4": {"runner": "run-tests.php", "compatPatch": "run-tests-8.2-plus.patch", "workers": "-j6", "progress": "--no-progress"},
   "8.5": {"runner": "run-tests.php", "compatPatch": "run-tests-8.2-plus.patch", "workers": "-j6", "progress": "--no-progress"},
-  "8.6": {"runner": "run-tests.php", "compatPatch": "run-tests-8.2-plus.patch", "workers": "-j6", "progress": "--no-progress"},
-  "default": {"runner": "run-tests.php", "compatPatch": "run-tests-8.2-plus.patch", "workers": "-j6", "progress": "--no-progress"}
+  "8.6": {"runner": "run-tests.php", "workers": "-j2", "progress": "--no-progress"},
+  "default": {"runner": "run-tests.php", "workers": "-j2", "progress": "--no-progress"}
 }

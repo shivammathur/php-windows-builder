@@ -72,6 +72,8 @@ function Invoke-PhpBuild {
 
             $task = [System.IO.Path]::GetFileName($taskTemplate)
             Copy-Item -Path $taskTemplate -Destination $task -Force
+            Copy-Item -Path (Join-Path $PSScriptRoot '..\runner\train-pgo-error-handlers.bat') -Destination . -Force
+            Copy-Item -Path (Join-Path $PSScriptRoot '..\runner\train-pgo-error-handlers.php') -Destination . -Force
 
             Invoke-PhpSdkStarter -BuildDirectory $buildDirectory -VsConfig $VsConfig -Arch $Arch -Task $task
 
