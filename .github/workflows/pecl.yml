@@ -73,6 +73,7 @@ jobs:
 
   extension:
     needs: get-extension-matrix
+    name: extension (${{ matrix.os }}, ${{ matrix.php-version }}, ${{ matrix.arch }}, ${{ matrix.ts }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -88,6 +89,7 @@ jobs:
           php-version: ${{ matrix.php-version }}
           arch: ${{ matrix.arch }}
           ts: ${{ matrix.ts }}
+          save-vs-cache: ${{ matrix.save-vs-cache }}
           args: ${{ inputs.args }}
           libs: ${{ inputs.libs }}
           run-tests: ${{ inputs.run-tests }}

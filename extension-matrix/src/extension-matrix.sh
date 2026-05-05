@@ -19,12 +19,14 @@ IFS=',' read -r -a arch_array <<<"${ARCH_LIST// /}"
 IFS=',' read -r -a ts_array <<<"${TS_LIST// /}"
 
 vs_json="$SCRIPT_DIR"/../config/vs.json
+vs_toolset_json="$SCRIPT_DIR"/../../extension/BuildPhpExtension/config/vs.json
 filtered_versions=$(jq -r 'keys | join(" ")' "$vs_json")
 if [[ -z "$ALLOW_OLD_PHP_VERSIONS" || "$ALLOW_OLD_PHP_VERSIONS" == "false" ]]; then
   filtered_versions=$(jq -r 'to_entries | map(select(.value.type == "github-hosted") | .key) | join(" ")' "$vs_json")
 fi
 
 found='false'
+vs_cache_savers=' '
 for php_version in "${php_version_array[@]}"; do
   if [[ " $filtered_versions " =~ $php_version ]]; then
     found='true'
@@ -32,9 +34,22 @@ for php_version in "${php_version_array[@]}"; do
     continue
   fi
   os=$(jq -r --arg php_version "$php_version" '.[$php_version].os' "$vs_json")
+  vs_toolset=''
+  if [[ -f "$vs_toolset_json" ]]; then
+    vs_toolset=$(jq -r --arg php_version "$php_version" '.php[$php_version] // empty' "$vs_toolset_json")
+  fi
+  if [[ -z "$vs_toolset" ]]; then
+    vs_toolset=$(jq -r --arg php_version "$php_version" '.[$php_version].vs' "$vs_json")
+  fi
   for arch in "${arch_array[@]}"; do
     for ts in "${ts_array[@]}"; do
-      matrix+=("{\"os\": \"$os\", \"php-version\": \"$php_version\", \"arch\": \"$arch\", \"ts\": \"$ts\"}")
+      vs_cache_key="$os-$vs_toolset"
+      save_vs_cache='false'
+      if [[ "$vs_cache_savers" != *" $vs_cache_key "* ]]; then
+        save_vs_cache='true'
+        vs_cache_savers+="$vs_cache_key "
+      fi
+      matrix+=("{\"os\": \"$os\", \"php-version\": \"$php_version\", \"arch\": \"$arch\", \"ts\": \"$ts\", \"save-vs-cache\": $save_vs_cache}")
     done
   done
 done

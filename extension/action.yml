@@ -50,6 +50,10 @@ inputs:
     description: Test workers
     required: false
     default: '8'
+  save-vs-cache:
+    description: Save Visual Studio components cache
+    required: false
+    default: 'true'
   build-directory:
     description: Directory to build the extension in
     required: false
@@ -117,13 +121,13 @@ runs:
                                  -Ts ${{inputs.ts}}
 
     - name: Stage VS toolset cache
-      if: steps.vs-check.outputs.needs-vs-install == 'true' && steps.vs-cache.outputs.cache-hit != 'true'
+      if: inputs.save-vs-cache == 'true' && steps.vs-check.outputs.needs-vs-install == 'true' && steps.vs-cache.outputs.cache-hit != 'true'
       shell: pwsh
       run: |
         Invoke-SaveVsToolsetCache -PhpVersion ${{ inputs.php-version }} -CachePath "${{ steps.vs-check.outputs.vs-cache-path }}"
 
     - name: Save VS components cache
-      if: steps.vs-check.outputs.needs-vs-install == 'true' && steps.vs-cache.outputs.cache-hit != 'true'
+      if: inputs.save-vs-cache == 'true' && steps.vs-check.outputs.needs-vs-install == 'true' && steps.vs-cache.outputs.cache-hit != 'true'
       continue-on-error: true
       uses: actions/cache/save@v5
       with:
