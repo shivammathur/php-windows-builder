@@ -150,7 +150,7 @@ Function Get-ExtensionConfig {
                 $config.build_tools += "python"
             }
 
-            if($Extension -eq "oci8_19" -or $Extension -eq "pdo_oci" -or $Extension -eq 'ibm_db2' -or $Extension -eq 'pdo_ibm') {
+            if($Extension -eq "oci8_19" -or $Extension -eq "pdo_oci" -or $Extension -eq 'ibm_db2' -or $Extension -eq 'pdo_ibm' -or $Extension -eq 'bsdiff') {
                 $env:AUTO_DETECT_ARGS = 'true'
                 $env:AUTO_DETECT_LIBS = 'true'
             }

@@ -36,6 +36,9 @@ Function Get-ArgumentsFromConfig {
         if($configW32Content.contains('ARG_WITH("boost"')) {
             $arguments += "--with-boost=..\deps\boost"
         }
+        if($Extension -eq "bsdiff" -and ($configW32Content.contains('ARG_WITH("bz2"') -or $configW32Content.contains("ARG_WITH('bz2'"))) {
+            $arguments += "--with-bz2=..\deps"
+        }
 
         $argValue='';
         if($ConfigW32Content.Contains("PHP_$($Extension.ToUpper())_SHARED")) {
