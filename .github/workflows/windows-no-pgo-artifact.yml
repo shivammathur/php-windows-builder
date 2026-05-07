@@ -1,0 +1,72 @@
+name: Windows no-PGO PHP artifact
+run-name: Build no-PGO PHP from source ${{ inputs.php-src-ref || 'eb3406386e630e3205136fa26b2ca6b855de6e0a' }}
+
+on:
+  push:
+    branches:
+      - debug/no-pgo-artifact
+  workflow_dispatch:
+    inputs:
+      php-src-repository:
+        description: 'php-src repository to build from'
+        required: true
+        default: php/php-src
+      php-src-ref:
+        description: 'Branch, tag, or SHA in the php-src repository to build from'
+        required: true
+
+jobs:
+  php:
+    name: Build x64 nts without PGO
+    runs-on: windows-2022
+    steps:
+      - name: Configure PHP source line endings
+        shell: pwsh
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+
+      - name: Checkout PHP source
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ inputs.php-src-repository || 'php/php-src' }}
+          ref: ${{ inputs.php-src-ref || 'eb3406386e630e3205136fa26b2ca6b855de6e0a' }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout builder
+        uses: actions/checkout@v6
+        with:
+          path: builder
+
+      - name: Disable PGO for diagnostic build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $config = Join-Path $PWD 'builder\php\BuildPhp\config\vs17\x64\config.nts.bat'
+          $content = Get-Content -Raw -Path $config
+          $content = $content -replace ' "--enable-pgi"', ''
+          Set-Content -Path $config -Value $content -Encoding ascii
+
+          $task = Join-Path $PWD 'builder\php\BuildPhp\runner\task-nts.bat'
+          @'
+          set LDFLAGS="/d2:-AllowCompatibleILVersions" 2>&1
+          call buildconf.bat 2>&1
+          if errorlevel 1 exit 1
+          call config.nts.bat 2>&1
+          if errorlevel 1 exit 2
+          nmake && nmake snap 2>&1
+          if errorlevel 1 exit 3
+          '@ | Set-Content -Path $task -Encoding ascii
+
+          Get-Content -Path $config
+          Get-Content -Path $task
+
+      - name: Build
+        uses: ./builder/php
+        with:
+          arch: x64
+          ts: nts
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          PHP_BUILD_PROVIDER: "The PHP Group"
