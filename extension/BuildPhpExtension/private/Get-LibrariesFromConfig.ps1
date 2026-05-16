@@ -113,14 +113,14 @@ Function Get-LibrariesFromConfig {
         # Exceptions
         # Remove libsasl if the extension is mongodb
         if($Extension -eq "mongodb") {
-            $foundItems = $foundItems | Where-Object {$_ -notmatch "libsasl.*"}
+            $foundItems = @($foundItems | Where-Object {$_ -notmatch "libsasl.*"})
         }
 
         # For PHP Version 8.0 and 8.1, replace librabbitmq.openssl3 with librabbitmq.openssl1.1
         if($PhpVersion -match '^8\.[01]') {
-            $foundItems = $foundItems | ForEach-Object {
+            $foundItems = @($foundItems | ForEach-Object {
                 if($_ -match 'librabbitmq\.openssl3') { $_ -replace 'librabbitmq\.openssl3', 'librabbitmq.openssl1.1' } else { $_ }
-            }
+            })
         }
 
         # Custom mappings which are not in config.w32
