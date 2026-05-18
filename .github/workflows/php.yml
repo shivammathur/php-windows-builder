@@ -19,7 +19,7 @@ jobs:
       matrix:
         arch: [x64, x86]
         ts: [nts, ts]
-    runs-on: windows-2022
+    runs-on: ${{ inputs.php-version == 'master' && 'windows-2025-vs2026' || 'windows-2022' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -52,7 +52,7 @@ jobs:
         ts: [nts, ts]
         opcache: [opcache, nocache]
         test-type: [php, ext]
-    runs-on: windows-2022
+    runs-on: ${{ inputs.php-version == 'master' && 'windows-2025-vs2026' || 'windows-2022' }}
     needs: artifacts
     steps:
       - name: Checkout
@@ -66,6 +66,7 @@ jobs:
 
       - name: Get Cache Key
         id: cache-key
+        shell: pwsh
         run: |
           $pv = '${{inputs.php-version}}'
           if('${{inputs.php-version}}' -ne 'master') {
@@ -110,7 +111,7 @@ jobs:
       matrix:
         arch: [x64, x86]
         ts: [nts, ts]
-    runs-on: windows-2022
+    runs-on: ${{ inputs.php-version == 'master' && 'windows-2025-vs2026' || 'windows-2022' }}
     needs: [artifacts]
     steps:
       - name: Checkout

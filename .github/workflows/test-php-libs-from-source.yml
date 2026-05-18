@@ -19,7 +19,7 @@ jobs:
       matrix:
         arch: [x64, x86]
         ts: [nts, ts]
-    runs-on: windows-2022
+    runs-on: ${{ inputs.php-src-ref == 'master' && 'windows-2025-vs2026' || 'windows-2022' }}
     steps:
       - name: Configure PHP source line endings
         shell: pwsh
@@ -70,7 +70,7 @@ jobs:
         ts: [nts, ts]
         opcache: [opcache, nocache]
         test-type: [php, ext]
-    runs-on: windows-2022
+    runs-on: ${{ inputs.php-src-ref == 'master' && 'windows-2025-vs2026' || 'windows-2022' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -83,6 +83,7 @@ jobs:
 
       - name: Get Cache Key
         id: cache-key
+        shell: pwsh
         run: |
           $artifactDirectory = $(pwd).Path
           $zip = Get-ChildItem -Path $artifactDirectory -Filter "php-*.zip" -File |
@@ -137,7 +138,7 @@ jobs:
       matrix:
         arch: [x64, x86]
         ts: [nts, ts]
-    runs-on: windows-2022
+    runs-on: ${{ inputs.php-src-ref == 'master' && 'windows-2025-vs2026' || 'windows-2022' }}
     needs: [artifacts]
     steps:
       - name: Checkout

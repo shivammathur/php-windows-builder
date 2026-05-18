@@ -89,7 +89,7 @@ jobs:
   test:
     needs: set-matrix
     name: ${{ inputs.php-version }} ${{ matrix.name }} ${{ inputs.arch }} ${{ inputs.ts }} ${{ inputs.opcache }}
-    runs-on: windows-2022
+    runs-on: ${{ inputs.php-version == 'master' && 'windows-2025-vs2026' || 'windows-2022' }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
