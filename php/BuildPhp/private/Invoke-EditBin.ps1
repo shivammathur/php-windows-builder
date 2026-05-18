@@ -26,13 +26,13 @@ function Invoke-EditBin {
             throw "Target executable not found: $Exe"
         }
 
-        $pattern = "C:\\Program Files\\Microsoft Visual Studio\\2022\\*\\VC\\Tools\\MSVC\\*\\bin\\Hostx64\\$Arch\\editbin.exe"
+        $pattern = "C:\\Program Files\\Microsoft Visual Studio\\*\\*\\VC\\Tools\\MSVC\\*\\bin\\Hostx64\\$Arch\\editbin.exe"
         $editbin = Get-ChildItem -Path $pattern -File -ErrorAction SilentlyContinue |
                    Sort-Object { Split-Path $_.DirectoryName -Leaf } -Descending |
                    Select-Object -First 1
 
         if (-not $editbin) {
-            throw "editbin.exe not found under VS2022 paths."
+            throw "editbin.exe not found under Visual Studio paths."
         }
 
         & $editbin.FullName "/STACK:$StackSize" $Exe
