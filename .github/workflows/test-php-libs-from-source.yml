@@ -19,7 +19,7 @@ jobs:
       matrix:
         arch: [x64, x86]
         ts: [nts, ts]
-    runs-on: ${{ inputs.php-src-ref == 'master' && 'windows-2025-vs2026' || 'windows-2022' }}
+    runs-on: windows-2025-vs2026
     steps:
       - name: Configure PHP source line endings
         shell: pwsh
@@ -70,7 +70,7 @@ jobs:
         ts: [nts, ts]
         opcache: [opcache, nocache]
         test-type: [php, ext]
-    runs-on: ${{ inputs.php-src-ref == 'master' && 'windows-2025-vs2026' || 'windows-2022' }}
+    runs-on: windows-2025-vs2026
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -138,7 +138,7 @@ jobs:
       matrix:
         arch: [x64, x86]
         ts: [nts, ts]
-    runs-on: ${{ inputs.php-src-ref == 'master' && 'windows-2025-vs2026' || 'windows-2022' }}
+    runs-on: windows-2025-vs2026
     needs: [artifacts]
     steps:
       - name: Checkout
