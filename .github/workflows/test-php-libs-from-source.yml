@@ -14,12 +14,38 @@ on:
         required: false
 
 jobs:
+  resolve-runner:
+    runs-on: ubuntu-latest
+    outputs:
+      runner: ${{ steps.resolve.outputs.runner }}
+    steps:
+      - name: Checkout PHP source
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ inputs.php-src-repository }}
+          ref: ${{ inputs.php-src-ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          path: php-src
+          fetch-depth: 1
+          sparse-checkout: main/php_version.h
+          sparse-checkout-cone-mode: false
+
+      - name: Resolve runner
+        id: resolve
+        shell: bash
+        run: |
+          read -r major minor < <(awk '/^#define PHP_(MAJOR|MINOR)_VERSION/ { v[++i]=$3 } END { print v[1], v[2] }' php-src/main/php_version.h)
+          runner="$([ "$major" -gt 8 ] || { [ "$major" -eq 8 ] && [ "$minor" -ge 6 ]; } && echo windows-2025-vs2026 || echo windows-2022)"
+          echo "PHP source version: $major.$minor; runner: $runner"
+          echo "runner=$runner" >> "$GITHUB_OUTPUT"
+
   php:
+    needs: resolve-runner
     strategy:
       matrix:
         arch: [x64, x86]
         ts: [nts, ts]
-    runs-on: ${{ (contains(inputs.php-src-ref, 'master') || contains(inputs.php-src-ref, '8.6')) && 'windows-2025-vs2026' || 'windows-2022' }}
+    runs-on: ${{ needs.resolve-runner.outputs.runner }}
     steps:
       - name: Configure PHP source line endings
         shell: pwsh
@@ -63,14 +89,14 @@ jobs:
           delete-merged: true
 
   tests:
-    needs: artifacts
+    needs: [resolve-runner, artifacts]
     strategy:
       matrix:
         arch: [x64, x86]
         ts: [nts, ts]
         opcache: [opcache, nocache]
         test-type: [php, ext]
-    runs-on: ${{ (contains(inputs.php-src-ref, 'master') || contains(inputs.php-src-ref, '8.6')) && 'windows-2025-vs2026' || 'windows-2022' }}
+    runs-on: ${{ needs.resolve-runner.outputs.runner }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -138,8 +164,8 @@ jobs:
       matrix:
         arch: [x64, x86]
         ts: [nts, ts]
-    runs-on: ${{ (contains(inputs.php-src-ref, 'master') || contains(inputs.php-src-ref, '8.6')) && 'windows-2025-vs2026' || 'windows-2022' }}
-    needs: [artifacts]
+    runs-on: ${{ needs.resolve-runner.outputs.runner }}
+    needs: [resolve-runner, artifacts]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
