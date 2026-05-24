@@ -446,10 +446,10 @@
                              foreach ($message["PHP_FAILED_TESTS"] as $category => $tests) {
                                  $PHP_FAILED_TESTS[$category] = array_merge($PHP_FAILED_TESTS[$category], $tests);
                              }
-@@ -1630,4 +1940,12 @@
- 
+@@ -1631,3 +1941,11 @@
      kill_children($workerProcs);
- 
+-
++
 +    if ($workerCrashRetryTests) {
 +        echo "Retrying " . count($workerCrashRetryTests) . " tests interrupted by worker crashes serially...\n";
 +        $savedWorkers = $workers;
@@ -471,14 +471,13 @@
                  break;
              default:
                  send_message($workerSock, [
-@@ -2942,6 +3269,7 @@
+@@ -2942,5 +3269,6 @@
  function error(string $message): void
  {
      echo "ERROR: {$message}\n";
 +    buildphp_worker_recovery_save_junit_on_error($message);
      exit(1);
  }
- 
 @@ -3353,5 +3681,7 @@
              if (!empty($suite_name)) {
                  foreach ($suite['files'] as $file) {
