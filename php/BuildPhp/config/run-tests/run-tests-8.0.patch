@@ -49,10 +49,14 @@
                  continue;
              }
 
-@@ -1385,6 +1386,273 @@
+@@ -1385,6 +1386,277 @@
  /** The heart of parallel testing.
   * @param string|array|null $redir_tested
   */
++if (!defined('BUILD_PHP_WORKER_STARTUP_TIMEOUT')) {
++    define('BUILD_PHP_WORKER_STARTUP_TIMEOUT', 30);
++}
++
 +if (!function_exists('buildphp_worker_recovery_format_test_index')) {
 +    function buildphp_worker_recovery_has_object_junit()
 +    {
@@ -240,7 +244,7 @@
 +            return false;
 +        }
 +
-+        $workerSock = stream_socket_accept($listenSock, 5);
++        $workerSock = stream_socket_accept($listenSock, BUILD_PHP_WORKER_STARTUP_TIMEOUT);
 +        if ($workerSock === false) {
 +            proc_terminate($proc);
 +            return false;
@@ -255,7 +259,7 @@
 +            ]
 +        ])) . "\n";
 +
-+        stream_set_timeout($workerSock, 5);
++        stream_set_timeout($workerSock, BUILD_PHP_WORKER_STARTUP_TIMEOUT);
 +        if (fwrite($workerSock, $greeting) === false) {
 +            fclose($workerSock);
 +            proc_terminate($proc);
@@ -332,6 +336,12 @@
 
      echo "=====================================================================\n";
      echo "========= WELCOME TO THE FUTURE: run-tests PARALLEL EDITION =========\n";
+@@ -1491,4 +1762,4 @@
+-        $workerSock = stream_socket_accept($listenSock, 5);
++        $workerSock = stream_socket_accept($listenSock, BUILD_PHP_WORKER_STARTUP_TIMEOUT);
+         if ($workerSock === false) {
+             kill_children($workerProcs);
+             error("Failed to accept connection from worker.");
 @@ -1500,10 +1768,6 @@
              "constants" => [
                  "INIT_DIR" => INIT_DIR,
@@ -343,6 +353,12 @@
              ]
          ])) . "\n";
 
+@@ -1510,4 +1771,4 @@
+-        stream_set_timeout($workerSock, 5);
++        stream_set_timeout($workerSock, BUILD_PHP_WORKER_STARTUP_TIMEOUT);
+         if (fwrite($workerSock, $greeting) === false) {
+             kill_children($workerProcs);
+             error("Failed to send greeting to worker.");
 @@ -1545,6 +1809,15 @@
 
  escape:
@@ -514,4 +530,3 @@
 +        $SUITE['files'] = array_replace($SUITE['files'], $suite['files']);
      }
  }
-

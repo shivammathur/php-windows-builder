@@ -1,9 +1,13 @@
 --- run-tests.php
 +++ run-tests.php
-@@ -143,6 +143,275 @@
+@@ -143,6 +143,279 @@
   * code that was previously found at the top level. It could and should be
   * refactored to be smaller and more manageable.
   */
++if (!defined('BUILD_PHP_WORKER_STARTUP_TIMEOUT')) {
++    define('BUILD_PHP_WORKER_STARTUP_TIMEOUT', 30);
++}
++
 +if (!function_exists('buildphp_worker_recovery_format_test_index')) {
 +    function buildphp_worker_recovery_has_object_junit()
 +    {
@@ -193,7 +197,7 @@
 +            return false;
 +        }
 +
-+        $workerSock = stream_socket_accept($listenSock, 5);
++        $workerSock = stream_socket_accept($listenSock, BUILD_PHP_WORKER_STARTUP_TIMEOUT);
 +        if ($workerSock === false) {
 +            proc_terminate($proc);
 +            return false;
@@ -208,7 +212,7 @@
 +            ]
 +        ])) . "\n";
 +
-+        stream_set_timeout($workerSock, 5);
++        stream_set_timeout($workerSock, BUILD_PHP_WORKER_STARTUP_TIMEOUT);
 +        if (fwrite($workerSock, $greeting) === false) {
 +            fclose($workerSock);
 +            proc_terminate($proc);
@@ -334,6 +338,12 @@
 
      // Each test may specify a list of conflict keys. While a test that conflicts with
      // key K is running, no other test that conflicts with K may run. Conflict keys are
+@@ -1524,4 +1797,4 @@
+-        $workerSock = stream_socket_accept($listenSock, 5);
++        $workerSock = stream_socket_accept($listenSock, BUILD_PHP_WORKER_STARTUP_TIMEOUT);
+         if ($workerSock === false) {
+             kill_children($workerProcs);
+             error("Failed to accept connection from worker.");
 @@ -1533,10 +1803,6 @@
              "constants" => [
                  "INIT_DIR" => INIT_DIR,
@@ -345,6 +355,12 @@
              ]
          ])) . "\n";
 
+@@ -1543,4 +1809,4 @@
+-        stream_set_timeout($workerSock, 5);
++        stream_set_timeout($workerSock, BUILD_PHP_WORKER_STARTUP_TIMEOUT);
+         if (fwrite($workerSock, $greeting) === false) {
+             kill_children($workerProcs);
+             error("Failed to send greeting to worker.");
 @@ -1578,6 +1844,15 @@
 
  escape:
@@ -508,4 +524,3 @@
 +        $dest['files'] = array_replace($dest['files'], $source['files']);
      }
  }
-
