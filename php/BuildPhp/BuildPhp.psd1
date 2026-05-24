@@ -67,6 +67,7 @@
         'Add-PhpDeps',
         'Add-TestRequirements',
         'Add-VS',
+        'Add-WindowsTestHelpers',
         'Get-DepsCacheInfo',
         'Get-File',
         'Get-LibsBuildDeps',
