@@ -78,7 +78,7 @@
         'Add-Path',
         'Add-PhpDependencies',
         'Add-StepLog',
-        'Add-Vs',
+        'Add-VS',
         'Get-ArgumentsFromConfig',
         'Get-BuildDirectory',
         'Get-CheckoutState',

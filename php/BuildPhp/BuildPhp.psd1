@@ -66,7 +66,7 @@
         'Add-Path',
         'Add-PhpDeps',
         'Add-TestRequirements',
-        'Add-Vs',
+        'Add-VS',
         'Get-DepsCacheInfo',
         'Get-File',
         'Get-LibsBuildDeps',

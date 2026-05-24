@@ -1,4 +1,4 @@
-function Add-Vs {
+function Add-VS {
     <#
     .SYNOPSIS
         Add the required Visual Studio components.
