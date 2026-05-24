@@ -13,11 +13,16 @@ function Set-PgSqlTestEnvironment {
         $env:PGPASSWORD = 'Password12!'
 
         if(-not(Test-Path pgsql_init)) {
-            Set-Service -Name "postgresql-x64-14" -StartupType manual -WarningAction SilentlyContinue -ErrorAction SilentlyContinue
-            Start-Service -Name "postgresql-x64-14" -WarningAction SilentlyContinue -ErrorAction SilentlyContinue
-            $service = Get-Service -Name "postgresql-x64-14" -ErrorAction SilentlyContinue
+            $service = Get-Service -Name "postgresql-x64-*" -ErrorAction SilentlyContinue |
+                Sort-Object -Property @{ Expression = { if ($_.Name -match '^postgresql-x64-(\d+)$') { [int]$Matches[1] } else { 0 } } } -Descending |
+                Select-Object -First 1
             if ($service) {
+                Write-Host "Using PostgreSQL service $($service.Name)."
+                Set-Service -Name $service.Name -StartupType manual -WarningAction SilentlyContinue -ErrorAction SilentlyContinue
+                Start-Service -Name $service.Name -WarningAction SilentlyContinue -ErrorAction SilentlyContinue
                 $service.WaitForStatus('Running', [TimeSpan]::FromSeconds(60))
+            } else {
+                Write-Warning "No PostgreSQL service matching postgresql-x64-* was found."
             }
             Set-Content -Path pgsql_init -Value "initialized" -Encoding ASCII
         }
