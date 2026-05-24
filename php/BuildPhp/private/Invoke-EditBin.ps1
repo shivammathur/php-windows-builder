@@ -28,7 +28,7 @@ function Invoke-EditBin {
 
         $pattern = "C:\\Program Files\\Microsoft Visual Studio\\*\\*\\VC\\Tools\\MSVC\\*\\bin\\Hostx64\\$Arch\\editbin.exe"
         $editbin = Get-ChildItem -Path $pattern -File -ErrorAction SilentlyContinue |
-                   Sort-Object { Split-Path $_.DirectoryName -Leaf } -Descending |
+                   Sort-Object { [Version](($_.FullName -split '\\MSVC\\')[1] -split '\\')[0] } -Descending |
                    Select-Object -First 1
 
         if (-not $editbin) {
