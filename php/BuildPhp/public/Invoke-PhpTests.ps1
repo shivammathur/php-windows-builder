@@ -87,7 +87,7 @@ function Invoke-PhpTests {
                                           -SourceRepository $SourceRepository `
                                           -SourceRef $SourceRef
 
-        Set-PhpIniForTests -BuildDirectory $buildDirectory -Opcache $Opcache -TestType $TestType
+        Set-PhpIniForTests -BuildDirectory $buildDirectory -Arch $Arch -Opcache $Opcache -TestType $TestType
 
         $Env:Path = "$buildDirectory\phpbin;$Env:Path"
         $Env:TEST_PHP_EXECUTABLE = "$buildDirectory\phpbin\php.exe"

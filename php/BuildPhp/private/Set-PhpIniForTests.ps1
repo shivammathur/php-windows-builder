@@ -4,6 +4,8 @@ function Set-PhpIniForTests {
         Set PHP INI for tests.
     .PARAMETER BuildDirectory
         Build directory
+    .PARAMETER Arch
+        Architecture (x86 or x64)
     .PARAMETER Opcache
         Opcache
     .PARAMETER TestType
@@ -15,10 +17,14 @@ function Set-PhpIniForTests {
         [ValidateNotNull()]
         [ValidateLength(1, [int]::MaxValue)]
         [string] $BuildDirectory,
-        [Parameter(Mandatory = $true, Position=1, HelpMessage='Specify Cache')]
+        [Parameter(Mandatory = $true, Position=1, HelpMessage='Architecture')]
+        [ValidateNotNull()]
+        [ValidateSet('x86', 'x64')]
+        [string] $Arch,
+        [Parameter(Mandatory = $true, Position=2, HelpMessage='Specify Cache')]
         [ValidateSet('nocache', 'opcache')]
         [string] $Opcache,
-        [Parameter(Mandatory = $true, Position=2, HelpMessage='Test type')]
+        [Parameter(Mandatory = $true, Position=3, HelpMessage='Test type')]
         [ValidateSet('ext', 'php')]
         [string] $TestType
     )
