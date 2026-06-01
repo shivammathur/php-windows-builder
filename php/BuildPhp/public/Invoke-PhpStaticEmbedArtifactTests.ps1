@@ -159,16 +159,30 @@ int main(int argc, char **argv)
                     '/link',
                     "/out:`"$exe`""
                 )
-                $cmd = "`"$vsDevCmd`" $archArg -host_arch=amd64 >nul && cl $($clArgs -join ' ')"
+                $linkBat = Join-Path $tempRoot ("embed-smoke-$($linkTest.Expected.ToLowerInvariant()).bat")
+                Set-Content -Path $linkBat -Encoding ascii -Value @(
+                    '@echo on',
+                    "call `"$vsDevCmd`" $archArg -host_arch=amd64",
+                    'if errorlevel 1 exit /b %ERRORLEVEL%',
+                    "cl $($clArgs -join ' ')",
+                    'exit /b %ERRORLEVEL%'
+                )
                 Write-Host "Running static embed link test: $($linkTest.Name)"
-                $output = cmd /d /s /c "`"$cmd`"" 2>&1
+                $output = cmd /d /c "`"$linkBat`"" 2>&1
                 $output | Set-Content -Path $log -Encoding utf8
                 $output | ForEach-Object { Write-Host $_ }
                 if($LASTEXITCODE -ne 0) {
                     $failures.Add("$($linkTest.Expected): $($linkTest.Name) failed to link with $embedLibName. See $log")
                 } elseif($linkTest.Expected -eq 'P2') {
-                    $dumpbinCmd = "`"$vsDevCmd`" $archArg -host_arch=amd64 >nul && dumpbin /dependents `"$exe`""
-                    $dumpbinOutput = cmd /d /s /c "`"$dumpbinCmd`"" 2>&1
+                    $dumpbinBat = Join-Path $tempRoot 'embed-smoke-dumpbin.bat'
+                    Set-Content -Path $dumpbinBat -Encoding ascii -Value @(
+                        '@echo on',
+                        "call `"$vsDevCmd`" $archArg -host_arch=amd64",
+                        'if errorlevel 1 exit /b %ERRORLEVEL%',
+                        "dumpbin /dependents `"$exe`"",
+                        'exit /b %ERRORLEVEL%'
+                    )
+                    $dumpbinOutput = cmd /d /c "`"$dumpbinBat`"" 2>&1
                     $dumpbinOutput | ForEach-Object { Write-Host $_ }
                     if(($dumpbinOutput -join "`n") -match "php${phpMajor}(ts)?(_debug)?\.dll") {
                         $failures.Add("P2: linked static embed smoke executable still depends on php${phpMajor}.dll.")
