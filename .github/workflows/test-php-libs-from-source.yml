@@ -12,6 +12,10 @@ on:
       libs-build-runs:
         description: 'Comma-separated list of GitHub Actions run IDs from winlibs/winlib-builder'
         required: false
+      configure-args:
+        description: 'Additional arguments to pass to php-src configure'
+        required: false
+        default: '--enable-embed=static'
 
 jobs:
   resolve-runner:
@@ -71,6 +75,7 @@ jobs:
           arch: ${{ matrix.arch }}
           ts: ${{ matrix.ts }}
           libs-build-runs: ${{ inputs.libs-build-runs }}
+          configure-args: ${{ inputs.configure-args }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
         env:
           PHP_BUILD_PROVIDER: "The PHP Group"
@@ -183,3 +188,28 @@ jobs:
           Invoke-PhpSmokeTests -ArtifactsDirectory (Join-Path $(pwd).Path 'artifacts') `
                                -Arch ${{matrix.arch}} `
                                -Ts ${{matrix.ts}}
+
+  static-embed-artifact-tests:
+    strategy:
+      matrix:
+        arch: [x64, x86]
+        ts: [nts, ts]
+    runs-on: ${{ needs.resolve-runner.outputs.runner }}
+    needs: [resolve-runner, artifacts]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: artifacts
+          path: artifacts
+
+      - name: Test static embed artifacts
+        shell: pwsh
+        run: |
+          Import-Module (Join-Path $(pwd).Path '\php\BuildPhp') -Force
+          Invoke-PhpStaticEmbedArtifactTests -ArtifactsDirectory (Join-Path $(pwd).Path 'artifacts') `
+                                             -Arch ${{matrix.arch}} `
+                                             -Ts ${{matrix.ts}}

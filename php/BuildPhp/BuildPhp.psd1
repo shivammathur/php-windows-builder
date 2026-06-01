@@ -99,6 +99,7 @@
 
         # Public functions
         'Invoke-PhpBuild',
+        'Invoke-PhpStaticEmbedArtifactTests',
         'Invoke-PhpSmokeTests',
         'Invoke-PhpTests'
     )
