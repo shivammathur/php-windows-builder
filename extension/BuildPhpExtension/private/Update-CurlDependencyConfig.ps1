@@ -32,24 +32,6 @@ Function Update-CurlDependencyConfig {
         $configW32Content = $configLines -join "`r`n"
         $updatedZstdLibrary = $configW32Content -ne $originalContent.TrimEnd()
 
-        if ($PhpVersion -ne 'master') {
-            if ($PhpVersion -notmatch '^(\d+\.\d+(?:\.\d+)?)') {
-                if ($updatedZstdLibrary) {
-                    Set-Content -Path $ConfigW32Path -Value $configW32Content -Encoding ASCII
-                    return $true
-                }
-                return $false
-            }
-
-            if ([version] $matches[1] -lt [version] '8.4') {
-                if ($updatedZstdLibrary) {
-                    Set-Content -Path $ConfigW32Path -Value $configW32Content -Encoding ASCII
-                    return $true
-                }
-                return $false
-            }
-        }
-
         if ($configW32Content -notmatch 'libcurl') {
             if ($updatedZstdLibrary) {
                 Set-Content -Path $ConfigW32Path -Value $configW32Content -Encoding ASCII

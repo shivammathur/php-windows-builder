@@ -39,6 +39,10 @@ inputs:
     description: PHP dependency series stability
     required: false
     default: stable
+  apply-patches:
+    description: Apply bundled php-windows-builder extension patches
+    required: false
+    default: 'false'
   arch:
     description: Architecture to build
     required: true
@@ -161,6 +165,7 @@ runs:
         AUTH_TOKEN: ${{inputs.auth-token}}
         AUTO_DETECT_ARGS: ${{env.auto-detect-args}}
         AUTO_DETECT_LIBS: ${{env.auto-detect-libs}}
+        APPLY_PATCHES: ${{inputs.apply-patches}}
         PHP_BUILD_ARTIFACT_PATH: ${{ steps.php-build-artifact.outputs.path || inputs.php-build-artifact-path }}
         PHP_LIBS_STABILITY: ${{ inputs.php-libs-stability }}
       run: |

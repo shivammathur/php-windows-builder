@@ -149,6 +149,9 @@ Function Get-LibrariesFromConfig {
         if($foundItems -contains 'libcurl' -and $foundItems -notcontains 'nghttp2') {
             $foundItems += 'nghttp2'
         }
+        if($foundItems -contains 'libcurl' -and $foundItems -notcontains 'brotli') {
+            $foundItems += 'brotli'
+        }
 
         $highestVersions = @{}
 

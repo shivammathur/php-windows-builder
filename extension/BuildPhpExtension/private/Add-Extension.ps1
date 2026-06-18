@@ -31,15 +31,11 @@ Function Add-Extension {
                 Rename-Item -Path "$currentDirectory\..\$Extension-*" -NewName $Extension
                 Set-Location "..\$Extension"
                 $extensionBuildDirectory = Join-Path -Path (Get-Location).Path -ChildPath $config.build_directory
-                # Apply patches only for php/php-windows-builder and shivammathur/php-windows-builder
-                if ($null -ne $env:GITHUB_REPOSITORY)
-                {
-                    if ($env:GITHUB_REPOSITORY -eq 'php/php-windows-builder' -or $env:GITHUB_REPOSITORY -eq 'shivammathur/php-windows-builder')
+                # Apply patches only for php/php-windows-builder, shivammathur/php-windows-builder, or explicit action opt-in.
+                if ($env:APPLY_PATCHES -eq 'true' -or $env:GITHUB_REPOSITORY -eq 'php/php-windows-builder' -or $env:GITHUB_REPOSITORY -eq 'shivammathur/php-windows-builder') {
+                    if (Test-Path -PATH $PSScriptRoot\..\patches\$Extension.ps1)
                     {
-                        if (Test-Path -PATH $PSScriptRoot\..\patches\$Extension.ps1)
-                        {
-                            . $PSScriptRoot\..\patches\$Extension.ps1
-                        }
+                        . $PSScriptRoot\..\patches\$Extension.ps1
                     }
                 }
                 Update-CurlDependencyConfig -PhpVersion $Config.php_version | Out-Null
