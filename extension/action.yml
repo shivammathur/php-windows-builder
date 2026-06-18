@@ -19,6 +19,26 @@ inputs:
   php-version:
     description: PHP version to build
     required: true
+  php-build-artifact-repository:
+    description: GitHub repository containing PHP build artifacts
+    required: false
+  php-build-artifact-run-id:
+    description: GitHub Actions run ID containing PHP build artifacts
+    required: false
+  php-build-artifact-name:
+    description: GitHub Actions artifact name containing PHP build zips
+    required: false
+    default: artifacts
+  php-build-artifact-path:
+    description: Local path containing PHP build artifact zips
+    required: false
+  php-build-artifact-token:
+    description: GitHub token used to download PHP build artifacts
+    required: false
+  php-libs-stability:
+    description: PHP dependency series stability
+    required: false
+    default: stable
   arch:
     description: Architecture to build
     required: true
@@ -97,6 +117,34 @@ runs:
       run: |
         Invoke-RestoreVsToolsetCache -CachePath "${{ steps.vs-check.outputs.vs-cache-path }}" -VsInstallPath "${{ steps.vs-check.outputs.vs-install-path }}"
 
+    - name: Download PHP build artifact
+      id: php-build-artifact
+      if: ${{ inputs.php-build-artifact-run-id != '' }}
+      shell: pwsh
+      env:
+        PHP_BUILD_ARTIFACT_REPOSITORY: ${{ inputs.php-build-artifact-repository }}
+        PHP_BUILD_ARTIFACT_RUN_ID: ${{ inputs.php-build-artifact-run-id }}
+        PHP_BUILD_ARTIFACT_NAME: ${{ inputs.php-build-artifact-name }}
+        PHP_BUILD_ARTIFACT_TOKEN: ${{ inputs.php-build-artifact-token || github.token }}
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $repo = $env:PHP_BUILD_ARTIFACT_REPOSITORY
+        if ([string]::IsNullOrWhiteSpace($repo)) {
+          $repo = $env:GITHUB_REPOSITORY
+        }
+        $artifactPath = Join-Path $env:RUNNER_TEMP "php-build-artifacts-$($env:PHP_BUILD_ARTIFACT_RUN_ID)"
+        Remove-Item -Path $artifactPath -Recurse -Force -ErrorAction SilentlyContinue
+        New-Item -Path $artifactPath -ItemType Directory -Force | Out-Null
+
+        if (-not [string]::IsNullOrWhiteSpace($env:PHP_BUILD_ARTIFACT_TOKEN)) {
+          $env:GH_TOKEN = $env:PHP_BUILD_ARTIFACT_TOKEN
+        }
+        gh run download $env:PHP_BUILD_ARTIFACT_RUN_ID --repo $repo --name $env:PHP_BUILD_ARTIFACT_NAME --dir $artifactPath
+        if ($LASTEXITCODE -ne 0) {
+          throw "Failed to download PHP build artifact $($env:PHP_BUILD_ARTIFACT_NAME) from $repo run $($env:PHP_BUILD_ARTIFACT_RUN_ID)"
+        }
+        "path=$artifactPath" | Add-Content -Path $env:GITHUB_OUTPUT -Encoding utf8
+
     - name: Build PHP Extension
       id: build
       shell: pwsh
@@ -113,6 +161,8 @@ runs:
         AUTH_TOKEN: ${{inputs.auth-token}}
         AUTO_DETECT_ARGS: ${{env.auto-detect-args}}
         AUTO_DETECT_LIBS: ${{env.auto-detect-libs}}
+        PHP_BUILD_ARTIFACT_PATH: ${{ steps.php-build-artifact.outputs.path || inputs.php-build-artifact-path }}
+        PHP_LIBS_STABILITY: ${{ inputs.php-libs-stability }}
       run: |
         Invoke-PhpBuildExtension -ExtensionUrl "${{inputs.extension-url}}" `
                                  -ExtensionRef "${{inputs.extension-ref}}" `

@@ -16,9 +16,10 @@ Function Add-PhpDependencies {
         if($Config.php_libraries.Count -ne 0) {
             Add-StepLog "Adding libraries (core)"
         }
+        $stability = if ([string]::IsNullOrWhiteSpace($env:PHP_LIBS_STABILITY)) { 'stable' } else { $env:PHP_LIBS_STABILITY }
         $phpBaseUrl = 'https://downloads.php.net/~windows/php-sdk/deps'
         $phpTrunkBaseUrl = "https://downloads.php.net/~windows/php-sdk/deps/$($Config.vs_version)/$($Config.arch)"
-        $phpSeries = Get-File -Url "$phpBaseUrl/series/packages-$($Config.php_version)-$($Config.vs_version)-$($Config.arch)-stable.txt"
+        $phpSeries = Get-File -Url "$phpBaseUrl/series/packages-$($Config.php_version)-$($Config.vs_version)-$($Config.arch)-$stability.txt"
         $phpTrunk = Get-File -Url $phpTrunkBaseUrl
         foreach ($library in $Config.php_libraries) {
             try {

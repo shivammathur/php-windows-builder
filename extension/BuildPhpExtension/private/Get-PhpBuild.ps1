@@ -25,23 +25,26 @@ function Get-PhpBuild {
             $binZipFile = "php-$phpSemver-$tsPart-$( $Config.vs_version )-$( $Config.arch ).zip"
             $binUrl = "$baseUrl/$binZipFile"
             $fallBackUrl = "$fallbackBaseUrl/$binZipFile"
+            $artifactZipPath = Get-PhpArtifactZip -Config $Config -Kind runtime
 
-            if ($Config.php_version -lt '7.4') {
-                $fallBackUrl = $fallBackUrl.replace("vc", "VC")
-            }
+            if ($null -eq $artifactZipPath) {
+                if ($Config.php_version -lt '7.4') {
+                    $fallBackUrl = $fallBackUrl.replace("vc", "VC")
+                }
 
-            try {
-                Get-File -Url $binUrl -OutFile $binZipFile
-            } catch {
                 try {
-                    Get-File -Url $fallBackUrl -OutFile $binZipFile
+                    Get-File -Url $binUrl -OutFile $binZipFile
                 } catch {
-                    throw "Failed to download the build for PHP version $( $Config.php_version )."
+                    try {
+                        Get-File -Url $fallBackUrl -OutFile $binZipFile
+                    } catch {
+                        throw "Failed to download the build for PHP version $( $Config.php_version )."
+                    }
                 }
             }
 
             $currentDirectory = (Get-Location).Path
-            $binZipFilePath = Join-Path $currentDirectory $binZipFile
+            $binZipFilePath = if ($null -ne $artifactZipPath) { $artifactZipPath } else { Join-Path $currentDirectory $binZipFile }
             $binDirectoryPath = Join-Path $currentDirectory php-bin
 
             [System.IO.Compression.ZipFile]::ExtractToDirectory($binZipFilePath, $binDirectoryPath)
