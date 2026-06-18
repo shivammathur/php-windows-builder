@@ -146,6 +146,9 @@ Function Get-LibrariesFromConfig {
         if($Extension -eq "luasandbox") {
             $foundItems = @("lua-5.1")
         }
+        if($foundItems -contains 'libcurl' -and $foundItems -notcontains 'nghttp2') {
+            $foundItems += 'nghttp2'
+        }
 
         $highestVersions = @{}
 
