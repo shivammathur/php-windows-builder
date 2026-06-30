@@ -28,7 +28,12 @@ function Get-PhpArtifactZip {
 
         $tsPart = if ($Config.ts -eq "nts") { "nts-Win32" } else { "Win32" }
         $prefix = if ($Kind -eq 'devel') { "php-devel-pack-" } else { "php-" }
-        $namePattern = "^$([regex]::Escape("$prefix$($Config.php_version)"))(?:[\.-].*)?-$([regex]::Escape($tsPart))-$([regex]::Escape($Config.vs_version))-$([regex]::Escape($Config.arch))\.zip$"
+        $versionPattern = if ($Config.php_version -eq 'master') {
+            '(?:master|\d+\.\d+\.\d+(?:-[A-Za-z0-9.]+)?)'
+        } else {
+            [regex]::Escape($Config.php_version)
+        }
+        $namePattern = "^$([regex]::Escape($prefix))$versionPattern(?:[\.-].*)?-$([regex]::Escape($tsPart))-$([regex]::Escape($Config.vs_version))-$([regex]::Escape($Config.arch))\.zip$"
         $zips = @(Get-ChildItem -LiteralPath $artifactPath -Recurse -File -Filter "$prefix*.zip" | Where-Object {
             $_.Name -match $namePattern -and ($Config.ts -eq "nts" -or $_.Name -notmatch "-nts-Win32-")
         })
