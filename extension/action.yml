@@ -35,6 +35,21 @@ inputs:
   php-build-artifact-token:
     description: GitHub token used to download PHP build artifacts
     required: false
+  php-libs-artifact-repository:
+    description: GitHub repository containing PHP dependency artifacts
+    required: false
+  php-libs-artifact-run-id:
+    description: GitHub Actions run ID containing PHP dependency artifacts
+    required: false
+  php-libs-artifact-name:
+    description: GitHub Actions artifact name containing PHP dependency zips
+    required: false
+  php-libs-artifact-path:
+    description: Local path containing PHP dependency artifact zips or extracted dependency artifacts
+    required: false
+  php-libs-artifact-token:
+    description: GitHub token used to download PHP dependency artifacts
+    required: false
   php-libs-stability:
     description: PHP dependency series stability
     required: false
@@ -149,6 +164,40 @@ runs:
         }
         "path=$artifactPath" | Add-Content -Path $env:GITHUB_OUTPUT -Encoding utf8
 
+    - name: Download PHP dependency artifact
+      id: php-libs-artifact
+      if: ${{ inputs.php-libs-artifact-run-id != '' }}
+      shell: pwsh
+      env:
+        PHP_LIBS_ARTIFACT_REPOSITORY: ${{ inputs.php-libs-artifact-repository }}
+        PHP_LIBS_ARTIFACT_RUN_ID: ${{ inputs.php-libs-artifact-run-id }}
+        PHP_LIBS_ARTIFACT_NAME: ${{ inputs.php-libs-artifact-name }}
+        PHP_LIBS_ARTIFACT_TOKEN: ${{ inputs.php-libs-artifact-token || github.token }}
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $repo = $env:PHP_LIBS_ARTIFACT_REPOSITORY
+        if ([string]::IsNullOrWhiteSpace($repo)) {
+          $repo = $env:GITHUB_REPOSITORY
+        }
+        $artifactPath = Join-Path $env:RUNNER_TEMP "php-libs-artifacts-$($env:PHP_LIBS_ARTIFACT_RUN_ID)"
+        Remove-Item -Path $artifactPath -Recurse -Force -ErrorAction SilentlyContinue
+        New-Item -Path $artifactPath -ItemType Directory -Force | Out-Null
+
+        if (-not [string]::IsNullOrWhiteSpace($env:PHP_LIBS_ARTIFACT_TOKEN)) {
+          $env:GH_TOKEN = $env:PHP_LIBS_ARTIFACT_TOKEN
+        }
+
+        $downloadArgs = @('run', 'download', $env:PHP_LIBS_ARTIFACT_RUN_ID, '--repo', $repo, '--dir', $artifactPath)
+        if (-not [string]::IsNullOrWhiteSpace($env:PHP_LIBS_ARTIFACT_NAME)) {
+          $downloadArgs += @('--name', $env:PHP_LIBS_ARTIFACT_NAME)
+        }
+        gh @downloadArgs
+        if ($LASTEXITCODE -ne 0) {
+          $artifactName = if ([string]::IsNullOrWhiteSpace($env:PHP_LIBS_ARTIFACT_NAME)) { 'all dependency artifacts' } else { $env:PHP_LIBS_ARTIFACT_NAME }
+          throw "Failed to download PHP dependency artifact $artifactName from $repo run $($env:PHP_LIBS_ARTIFACT_RUN_ID)"
+        }
+        "path=$artifactPath" | Add-Content -Path $env:GITHUB_OUTPUT -Encoding utf8
+
     - name: Build PHP Extension
       id: build
       shell: pwsh
@@ -167,6 +216,7 @@ runs:
         AUTO_DETECT_LIBS: ${{env.auto-detect-libs}}
         APPLY_PATCHES: ${{inputs.apply-patches}}
         PHP_BUILD_ARTIFACT_PATH: ${{ steps.php-build-artifact.outputs.path || inputs.php-build-artifact-path }}
+        PHP_LIBS_ARTIFACT_PATH: ${{ steps.php-libs-artifact.outputs.path || inputs.php-libs-artifact-path || env.PHP_LIBS_ARTIFACT_PATH }}
         PHP_LIBS_STABILITY: ${{ inputs.php-libs-stability }}
       run: |
         Invoke-PhpBuildExtension -ExtensionUrl "${{inputs.extension-url}}" `

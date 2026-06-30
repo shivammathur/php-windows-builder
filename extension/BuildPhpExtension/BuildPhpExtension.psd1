@@ -92,6 +92,7 @@
         'Get-PeclLibraryZip',
         'Get-PhpBuild',
         'Get-PhpBuildDetails',
+        'Get-PhpLibraryArtifact',
         'Get-PhpDevelBuild',
         'Get-PhpSdk',
         'Get-PhpSrc',
@@ -110,6 +111,8 @@
         'Set-AmqpTestEnvironment',
         'Set-GAGroup',
         'Set-ImagickTestEnvironment',
+        'Set-MemcacheTestEnvironment',
+        'Set-MemcachedTestEnvironment',
         'Set-NetSecurityProtocolType',
         'Set-Oci819TestEnvironment',
         'Set-PdoOciTestEnvironment',
@@ -174,4 +177,3 @@
     # DefaultCommandPrefix = ''
 
 }
-
