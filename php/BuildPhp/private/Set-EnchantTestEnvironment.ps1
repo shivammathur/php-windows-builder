@@ -26,7 +26,7 @@ function Set-EnchantTestEnvironment {
         try {
             $zip = Join-Path $dictDir 'dict.zip'
             $url = 'https://downloads.php.net/~windows/qa/appveyor/ext/enchant/dict.zip'
-            Invoke-WebRequest -Uri $url -UseBasicParsing -OutFile $zip
+            Get-File -Url $url -OutFile $zip
             try {
                 Expand-Archive -LiteralPath $zip -DestinationPath $dictDir -Force
             } catch {

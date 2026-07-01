@@ -59,7 +59,7 @@ function Add-PhpDeps {
             Write-Host "Processing package $line"
             $temp = New-TemporaryFile | Rename-Item -NewName { $_.Name + '.zip' } -PassThru
             $url = "$baseurl/$VsVersion/$Arch/$line"
-            Invoke-WebRequest -Uri $url -UseBasicParsing -OutFile $temp.FullName -ErrorAction Stop
+            Get-File -Url $url -OutFile $temp.FullName
             try {
                 Expand-Archive -LiteralPath $temp.FullName -DestinationPath $Destination -Force
             } catch {

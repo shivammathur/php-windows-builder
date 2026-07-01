@@ -39,7 +39,7 @@ function Get-PhpDepsPackages {
 
         $seriesUrl = "$baseurl/series/packages-$depsPhpVersion-$VsVersion-$Arch-staging.txt"
         Write-Host "Fetching series listing: $seriesUrl"
-        $series = Invoke-WebRequest -Uri $seriesUrl -UseBasicParsing -ErrorAction Stop
+        $series = Get-File -Url $seriesUrl
         $packages = @()
         if ($series -and $series.Content) {
             $packages = $series.Content -split "[\r\n]+" | Where-Object { $_ -and $_.Trim().Length -gt 0 }

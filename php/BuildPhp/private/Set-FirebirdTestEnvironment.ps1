@@ -24,7 +24,7 @@ function Set-FirebirdTestEnvironment {
         }
 
         $zipPath = Join-Path $destDir 'Firebird.zip'
-        Invoke-WebRequest -Uri $url -UseBasicParsing -OutFile $zipPath
+        Get-File -Url $url -OutFile $zipPath
 
         try {
             Expand-Archive -LiteralPath $zipPath -DestinationPath $destDir -Force
