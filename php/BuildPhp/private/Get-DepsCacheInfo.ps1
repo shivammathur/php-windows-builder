@@ -8,6 +8,8 @@ function Get-DepsCacheInfo {
         Target architecture: x86 or x64.
     .PARAMETER LibsBuildRuns
         Optional comma-separated workflow run IDs used for library overrides.
+    .PARAMETER LibsBuildRepository
+        GitHub repository containing the workflow runs.
     .PARAMETER IncludeDefaultRunsKey
         Append "default" to the cache key when no workflow run IDs are provided.
     #>
@@ -23,6 +25,9 @@ function Get-DepsCacheInfo {
         [Parameter(Mandatory=$false)]
         [string] $LibsBuildRuns = '',
         [Parameter(Mandatory=$false)]
+        [ValidateNotNullOrEmpty()]
+        [string] $LibsBuildRepository = 'winlibs/winlib-builder',
+        [Parameter(Mandatory=$false)]
         [switch] $IncludeDefaultRunsKey
     )
 
@@ -37,10 +42,14 @@ function Get-DepsCacheInfo {
 
         $runsKey = ''
         $normalizedRuns = @($LibsBuildRuns -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' }) -join ','
+        $normalizedRepository = $LibsBuildRepository.Trim()
+        if ($normalizedRepository -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') {
+            throw "Invalid repository '$normalizedRepository'. Expected owner/repository."
+        }
         if ($normalizedRuns) {
             $runsKey = [System.Convert]::ToHexString(
                 [System.Security.Cryptography.SHA256]::HashData(
-                    [System.Text.Encoding]::UTF8.GetBytes($normalizedRuns)
+                    [System.Text.Encoding]::UTF8.GetBytes("$normalizedRepository`n$normalizedRuns")
                 )
             ).ToLowerInvariant().Substring(0, 16)
         } elseif ($IncludeDefaultRunsKey) {
@@ -61,6 +70,7 @@ function Get-DepsCacheInfo {
             VsVersion = $vsVersion
             CacheKey = $cacheKey
             CacheDir = "C:\deps-$depsPhpVersion-$Arch"
+            LibsBuildRepository = $normalizedRepository
             Packages = @($packageData.Packages)
             OverrideLibraries = @($packageData.OverrideLibraries)
         }

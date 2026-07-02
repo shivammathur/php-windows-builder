@@ -39,6 +39,10 @@ on:
       libs-build-runs:
         description: 'Comma-separated winlibs/winlib-builder run IDs used by the PHP build artifacts'
         required: false
+      libs-build-repository:
+        description: 'GitHub repository containing the library build workflow runs'
+        required: false
+        default: winlibs/winlib-builder
       source-repository:
         description: 'php-src repository to source tests from when source-ref is provided'
         required: true
@@ -121,6 +125,7 @@ jobs:
             -PhpVersion '${{ inputs.php-version }}' `
             -Arch '${{ inputs.arch }}' `
             -LibsBuildRuns '${{ inputs.libs-build-runs }}' `
+            -LibsBuildRepository '${{ inputs.libs-build-repository }}' `
             -IncludeDefaultRunsKey
           Set-Content -Path packages.txt -Value ($cacheInfo.Packages -join "`n")
           Add-Content -Value "cache-key=$($cacheInfo.CacheKey)" -Path $env:GITHUB_OUTPUT
@@ -139,6 +144,7 @@ jobs:
           DEPS_DIR: ${{ steps.cache-key.outputs.cache-dir }}
           DEPS_CACHE_HIT: ${{ steps.cache-deps.outputs.cache-hit }}
           LIBS_BUILD_RUNS: ${{ inputs.libs-build-runs }}
+          LIBS_BUILD_REPOSITORY: ${{ inputs.libs-build-repository }}
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           Import-Module (Join-Path $(pwd).Path '\php\BuildPhp') -Force

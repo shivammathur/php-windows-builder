@@ -6,6 +6,8 @@ function Get-LibsBuildDeps {
         Target architecture: x86 or x64.
     .PARAMETER Destination
         Destination directory to extract the downloaded deps into.
+    .PARAMETER Repository
+        GitHub repository containing the workflow runs.
     .OUTPUTS
         Array of library names that were downloaded.
     #>
@@ -17,10 +19,17 @@ function Get-LibsBuildDeps {
         [string] $Arch,
         [Parameter(Mandatory=$true)]
         [ValidateNotNullOrEmpty()]
-        [string] $Destination
+        [string] $Destination,
+        [Parameter(Mandatory=$false)]
+        [ValidateNotNullOrEmpty()]
+        [string] $Repository = 'winlibs/winlib-builder'
     )
 
     $downloadedLibs = @()
+    $repository = $Repository.Trim()
+    if ($repository -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') {
+        throw "Invalid repository '$repository'. Expected owner/repository."
+    }
 
     $runIds = @($env:LIBS_BUILD_RUNS -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' })
     if ($runIds.Count -eq 0) {
@@ -41,8 +50,8 @@ function Get-LibsBuildDeps {
     }
 
     foreach ($runId in $runIds) {
-        Write-Host "Processing workflow run: $runId"
-        $url = "https://api.github.com/repos/winlibs/winlib-builder/actions/runs/$runId/artifacts"
+        Write-Host "Processing workflow run: $repository#$runId"
+        $url = "https://api.github.com/repos/$repository/actions/runs/$runId/artifacts"
         $response = Invoke-RestMethod -Uri $url -Headers $headers -Method Get
 
         if ($response.total_count -eq 0) {

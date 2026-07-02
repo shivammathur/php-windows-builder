@@ -19,6 +19,10 @@ inputs:
   libs-build-runs:
     description: Comma-separated list of GitHub Actions run IDs from winlibs/winlib-builder to download artifacts from
     required: false
+  libs-build-repository:
+    description: GitHub repository containing the library build workflow runs
+    required: false
+    default: winlibs/winlib-builder
   github-token:
     description: GitHub token for accessing private repositories
     required: false
@@ -31,6 +35,7 @@ runs:
       shell: pwsh
       env:
         LIBS_BUILD_RUNS: ${{ inputs.libs-build-runs }}
+        LIBS_BUILD_REPOSITORY: ${{ inputs.libs-build-repository }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
       run: |
         Import-Module ${{ github.action_path }}\BuildPhp -Force

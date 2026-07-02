@@ -12,6 +12,10 @@ on:
       libs-build-runs:
         description: 'Comma-separated list of GitHub Actions run IDs from winlibs/winlib-builder'
         required: false
+      libs-build-repository:
+        description: 'GitHub repository containing the library build workflow runs'
+        required: false
+        default: winlibs/winlib-builder
 
 jobs:
   resolve-runner:
@@ -71,6 +75,7 @@ jobs:
           arch: ${{ matrix.arch }}
           ts: ${{ matrix.ts }}
           libs-build-runs: ${{ inputs.libs-build-runs }}
+          libs-build-repository: ${{ inputs.libs-build-repository }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
         env:
           PHP_BUILD_PROVIDER: "The PHP Group"
@@ -121,7 +126,7 @@ jobs:
           $phpVersion = [regex]::Match($zip.Name, '^php-(.+?)-(?:nts-)?Win32-v[sc]\d+-').Groups[1].Value
 
           Import-Module (Join-Path $(pwd).Path '\php\BuildPhp') -Force
-          $cacheInfo = Get-DepsCacheInfo -PhpVersion $phpVersion -Arch '${{ matrix.arch }}' -LibsBuildRuns '${{ inputs.libs-build-runs }}' -IncludeDefaultRunsKey
+          $cacheInfo = Get-DepsCacheInfo -PhpVersion $phpVersion -Arch '${{ matrix.arch }}' -LibsBuildRuns '${{ inputs.libs-build-runs }}' -LibsBuildRepository '${{ inputs.libs-build-repository }}' -IncludeDefaultRunsKey
           Set-Content -Path packages.txt -Value ($cacheInfo.Packages -join "`n")
           Add-Content -Value "php-version=$phpVersion" -Path $env:GITHUB_OUTPUT
           Add-Content -Value "cache-key=$($cacheInfo.CacheKey)" -Path $env:GITHUB_OUTPUT
@@ -141,6 +146,7 @@ jobs:
           DEPS_DIR: ${{ steps.cache-key.outputs.cache-dir }}
           DEPS_CACHE_HIT: ${{ steps.cache-deps.outputs.cache-hit }}
           LIBS_BUILD_RUNS: ${{ inputs.libs-build-runs }}
+          LIBS_BUILD_REPOSITORY: ${{ inputs.libs-build-repository }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           Import-Module (Join-Path $(pwd).Path '\php\BuildPhp') -Force

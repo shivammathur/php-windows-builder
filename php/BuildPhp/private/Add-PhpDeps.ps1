@@ -38,7 +38,8 @@ function Add-PhpDeps {
 
         $downloadedLibs = @()
         if ($env:LIBS_BUILD_RUNS) {
-            $downloadedLibs = Get-LibsBuildDeps -Arch $Arch -Destination $Destination
+            $repository = if ($env:LIBS_BUILD_REPOSITORY) { $env:LIBS_BUILD_REPOSITORY } else { 'winlibs/winlib-builder' }
+            $downloadedLibs = Get-LibsBuildDeps -Arch $Arch -Destination $Destination -Repository $repository
         }
 
         $packageData = Get-PhpDepsPackages -PhpVersion $PhpVersion -VsVersion $VsVersion -Arch $Arch
