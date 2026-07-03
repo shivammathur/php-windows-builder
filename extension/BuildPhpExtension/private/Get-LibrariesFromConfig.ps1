@@ -48,6 +48,9 @@ Function Get-LibrariesFromConfig {
                         foreach ($archData in $vsVersionData.Value.PSObject.Properties) {
                             if($archData.Name -eq $Arch) {
                                 foreach ($libs in $archData.Value.PSObject.Properties) {
+                                    if ($libs.Name -match '^apache-\d') {
+                                        continue
+                                    }
                                     if ($libs.Value -match ($MatchString.Replace('*', '.*'))) {
                                         $libs.Name -Match '^(.+?)-\d' | Out-Null
                                         if(!$phpSeries.contains($matches[1].ToLower())) {
