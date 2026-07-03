@@ -37,9 +37,10 @@ Function Update-CurlDependencyConfig {
             return $false
         }
 
-        $curlLibraries = @('brotlidec.lib', 'brotlicommon.lib', 'libzstd.lib')
+        $curlLibraries = @('brotlidec-static.lib;brotlidec.lib', 'brotlicommon-static.lib;brotlicommon.lib', 'libzstd_a.lib;libzstd.lib')
         $missingLibraries = @($curlLibraries | Where-Object {
-            $configW32Content -notmatch ("CHECK_LIB\((['""])" + [regex]::Escape($_) + '\1')
+            $libraryPattern = ($_.Split(';') | ForEach-Object { [regex]::Escape($_) }) -join '|'
+            $configW32Content -notmatch ("CHECK_LIB\((['""])[^'""]*($libraryPattern)[^'""]*\1")
         })
         if ($missingLibraries.Count -eq 0) {
             return $false
