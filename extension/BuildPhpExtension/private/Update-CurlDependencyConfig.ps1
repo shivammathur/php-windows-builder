@@ -26,7 +26,7 @@ Function Update-CurlDependencyConfig {
                 return $false
             }
 
-            if ([version] $matches[1] -lt [version] '8.4') {
+            if ([version] $matches[1] -lt [version] '8.2') {
                 return $false
             }
         }
