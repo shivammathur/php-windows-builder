@@ -12,6 +12,7 @@ function Add-PhpDeps {
         Destination directory to extract the downloaded deps into.
     #>
     [CmdletBinding()]
+    [OutputType([PSCustomObject])]
     param(
         [Parameter(Mandatory=$true)]
         [ValidateNotNullOrEmpty()]
@@ -75,6 +76,11 @@ function Add-PhpDeps {
             $tdir = Join-Path $Destination 'template\ssl'
             New-Item -ItemType Directory -Force -Path $tdir | Out-Null
             Move-Item -LiteralPath $extra -Destination (Join-Path $tdir 'openssl.cnf') -Force
+        }
+
+        $libraries = @($lines | ForEach-Object { $_ -replace '-\d.*$', '' }) + @($downloadedLibs)
+        return [PSCustomObject]@{
+            Libraries = @($libraries | Where-Object { $_ } | Sort-Object -Unique)
         }
     }
 }

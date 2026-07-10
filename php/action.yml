@@ -22,7 +22,11 @@ inputs:
   github-token:
     description: GitHub token for accessing private repositories
     required: false
-    default: ${{ github.token }}  
+    default: ${{ github.token }}
+  require-sbom:
+    description: Fail when the PHP binary archive does not contain CycloneDX and SPDX SBOMs
+    required: false
+    default: 'false'
 
 runs:
   using: composite
@@ -33,10 +37,12 @@ runs:
         LIBS_BUILD_RUNS: ${{ inputs.libs-build-runs }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
       run: |
+        $requireSbom = '${{ inputs.require-sbom }}' -eq 'true'
         Import-Module ${{ github.action_path }}\BuildPhp -Force
         Invoke-PhpBuild -PhpVersion '${{ inputs.php-version }}' `
                         -Arch '${{ inputs.arch }}' `
-                        -Ts '${{ inputs.ts }}'
+                        -Ts '${{ inputs.ts }}' `
+                        -RequireSbom:$requireSbom
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v7
