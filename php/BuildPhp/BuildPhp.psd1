@@ -98,7 +98,6 @@
         'Set-SnmpTestEnvironment',
 
         # Public functions
-        'Export-PhpSbomArtifacts',
         'Invoke-PhpBuild',
         'Invoke-PhpSmokeTests',
         'Invoke-PhpTests'
