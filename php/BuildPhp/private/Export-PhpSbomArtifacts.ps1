@@ -131,12 +131,29 @@ function Export-PhpSbomArtifacts {
         }
 
         $dependencyFormats = @{}
+        $dependencyNames = @{}
         foreach($entryName in $entries.Keys) {
             if($entryName -match '^extras/sbom/dependencies/(.+)\.(cdx|spdx)\.json$') {
-                if(-not $dependencyFormats.ContainsKey($Matches[1])) {
-                    $dependencyFormats[$Matches[1]] = [System.Collections.Generic.HashSet[string]]::new()
+                $dependencyName = $Matches[1]
+                $dependencyFormat = $Matches[2]
+                if(-not $dependencyFormats.ContainsKey($dependencyName)) {
+                    $dependencyFormats[$dependencyName] = [System.Collections.Generic.HashSet[string]]::new()
                 }
-                $dependencyFormats[$Matches[1]].Add($Matches[2]) | Out-Null
+                $dependencyFormats[$dependencyName].Add($dependencyFormat) | Out-Null
+                if($dependencyFormat -eq 'cdx') {
+                    $dependencyReader = [System.IO.StreamReader]::new($entries[$entryName].Open())
+                    try {
+                        $dependencyCycloneDx = $dependencyReader.ReadToEnd() | ConvertFrom-Json
+                    } finally {
+                        $dependencyReader.Dispose()
+                    }
+                    $libraryName = $dependencyCycloneDx.metadata.component.properties |
+                        Where-Object { $_.name -eq 'php:library' } |
+                        Select-Object -ExpandProperty value -First 1
+                    if(-not [string]::IsNullOrWhiteSpace($libraryName)) {
+                        $dependencyNames[$libraryName] = $dependencyName
+                    }
+                }
             }
         }
         foreach($dependency in $dependencyFormats.GetEnumerator()) {
@@ -145,8 +162,13 @@ function Export-PhpSbomArtifacts {
             }
         }
         foreach($dependency in $ExpectedDependencies) {
-            if($null -eq $entries["extras/sbom/dependencies/$dependency.cdx.json"] -or
-                $null -eq $entries["extras/sbom/dependencies/$dependency.spdx.json"]) {
+            $dependencyName = if($dependencyNames.ContainsKey($dependency)) {
+                $dependencyNames[$dependency]
+            } else {
+                $dependency
+            }
+            if($null -eq $entries["extras/sbom/dependencies/$dependencyName.cdx.json"] -or
+                $null -eq $entries["extras/sbom/dependencies/$dependencyName.spdx.json"]) {
                 throw "PHP archive $artifactName does not contain both SBOM formats for expected dependency $dependency"
             }
         }

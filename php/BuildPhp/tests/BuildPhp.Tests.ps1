@@ -57,8 +57,9 @@ Describe 'PHP SBOM sidecar export' {
             Add-Type -AssemblyName System.IO.Compression.FileSystem
             $payload = Join-Path $TestDrive 'payload'
             $sbomDirectory = Join-Path $payload 'extras/sbom'
+            $dependencySbomDirectory = Join-Path $sbomDirectory 'dependencies'
             $artifacts = Join-Path $TestDrive 'artifacts'
-            New-Item -Path $sbomDirectory, $artifacts -ItemType Directory -Force | Out-Null
+            New-Item -Path $sbomDirectory, $dependencySbomDirectory, $artifacts -ItemType Directory -Force | Out-Null
 
             @{
                 bomFormat = 'CycloneDX'
@@ -82,13 +83,27 @@ Describe 'PHP SBOM sidecar export' {
                     downloadLocation = 'NOASSERTION'
                 })
             } | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $sbomDirectory 'php.spdx.json')
+            @{
+                bomFormat = 'CycloneDX'
+                metadata = @{
+                    component = @{
+                        name = 'c-client'
+                        properties = @(@{ name = 'php:library'; value = 'imap' })
+                    }
+                }
+            } | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $dependencySbomDirectory 'c-client.cdx.json')
+            @{
+                spdxVersion = 'SPDX-2.3'
+                packages = @(@{ name = 'c-client'; SPDXID = 'SPDXRef-Package-c-client' })
+            } | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $dependencySbomDirectory 'c-client.spdx.json')
 
             $artifactName = 'php-8.2.33-dev-nts-Win32-vs16-x64.zip'
             $artifactPath = Join-Path $artifacts $artifactName
             [System.IO.Compression.ZipFile]::CreateFromDirectory($payload, $artifactPath)
             $expectedHash = (Get-FileHash -LiteralPath $artifactPath -Algorithm SHA256).Hash.ToLowerInvariant()
 
-            Export-PhpSbomArtifacts -ArtifactPath $artifactPath -ArtifactsDirectory $artifacts -RequireSbom
+            Export-PhpSbomArtifacts -ArtifactPath $artifactPath -ArtifactsDirectory $artifacts `
+                -ExpectedDependencies @('imap') -RequireSbom
 
             $cycloneDx = Get-Content -Raw "$artifactPath.cdx.json" | ConvertFrom-Json
             $spdx = Get-Content -Raw "$artifactPath.spdx.json" | ConvertFrom-Json
