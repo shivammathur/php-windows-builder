@@ -86,6 +86,7 @@ function Invoke-PhpTests {
                                           -ArtifactsDirectory $currentDirectory `
                                           -SourceRepository $SourceRepository `
                                           -SourceRef $SourceRef
+        Remove-Item Env:LIBS_BUILD_RUNS -ErrorAction SilentlyContinue
 
         Set-PhpIniForTests -BuildDirectory $buildDirectory -Arch $Arch -Opcache $Opcache -TestType $TestType
 
