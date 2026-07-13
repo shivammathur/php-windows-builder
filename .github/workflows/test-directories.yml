@@ -46,6 +46,11 @@ on:
       source-ref:
         description: 'Optional branch, tag, or SHA in the php-src repository'
         required: false
+      capture-worker-crash:
+        type: boolean
+        description: 'Run the selected tests under CDB with child-process debugging'
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -53,6 +58,7 @@ permissions:
 
 jobs:
   set-matrix:
+    if: inputs.capture-worker-crash != true
     runs-on: ubuntu-latest
     outputs:
       test-matrix: ${{ steps.set-matrix.outputs.test-matrix }}
@@ -87,6 +93,7 @@ jobs:
           Add-Content -Path $env:GITHUB_OUTPUT -Value "test-matrix=$json"
 
   test:
+    if: inputs.capture-worker-crash != true
     needs: set-matrix
     name: ${{ inputs.php-version }} ${{ matrix.name }} ${{ inputs.arch }} ${{ inputs.ts }} ${{ inputs.opcache }}
     runs-on: ${{ (contains(inputs.php-version, 'master') || contains(inputs.php-version, '8.6')) && 'windows-2025-vs2026' || 'windows-2022' }}
@@ -162,3 +169,13 @@ jobs:
             test-${{ inputs.arch }}-${{ inputs.ts }}-${{ inputs.opcache }}-${{ inputs.test-type }}.xml
             test-${{ inputs.arch }}-${{ inputs.ts }}-${{ inputs.opcache }}-${{ inputs.test-type }}.log
           if-no-files-found: ignore
+
+  debug-workers:
+    if: inputs.capture-worker-crash == true
+    uses: ./.github/workflows/debug-php-worker-crashes.yml
+    with:
+      artifact-run-id: ${{ inputs.php-build-run-id }}
+      libs-build-runs: ${{ inputs.libs-build-runs }}
+      php-src-repository: ${{ inputs.source-repository }}
+      php-src-ref: ${{ inputs.source-ref }}
+      test-directories: ${{ inputs.test-directories }}

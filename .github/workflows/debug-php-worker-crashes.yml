@@ -1,0 +1,244 @@
+name: Debug PHP test worker crashes
+run-name: Debug PHP test workers from build ${{ inputs.artifact-run-id }}
+
+on:
+  workflow_call:
+    inputs:
+      artifact-run-id:
+        required: true
+        type: string
+      libs-build-runs:
+        required: true
+        type: string
+      php-src-repository:
+        required: true
+        type: string
+      php-src-ref:
+        required: true
+        type: string
+      test-directories:
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  debug:
+    name: x86 NTS opcache (CDB)
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Download PHP build artifacts
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_RUN_ID: ${{ inputs.artifact-run-id }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ([string]::IsNullOrWhiteSpace($env:ARTIFACT_RUN_ID)) {
+            throw 'A PHP artifact workflow run ID is required.'
+          }
+          gh run download $env:ARTIFACT_RUN_ID `
+            -R $env:GITHUB_REPOSITORY `
+            -n artifacts `
+            -D $env:GITHUB_WORKSPACE
+          Get-ChildItem -Filter '*.zip' | Sort-Object Name | Select-Object Name, Length
+
+      - name: Get cache key
+        id: cache-key
+        shell: pwsh
+        env:
+          LIBS_BUILD_RUNS: ${{ inputs.libs-build-runs }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ([string]::IsNullOrWhiteSpace($env:LIBS_BUILD_RUNS)) {
+            throw 'The Winlibs workflow run IDs used by the PHP build are required.'
+          }
+
+          $zips = @(
+            Get-ChildItem -Path $env:GITHUB_WORKSPACE -Filter 'php-*.zip' -File |
+              Where-Object {
+                $_.Name -notmatch '^php-(debug|devel|test)-pack-' -and
+                $_.Name -match '^php-(.+?)-nts-Win32-v[sc]\d+-x86\.zip$'
+              }
+          )
+          if ($zips.Count -ne 1) {
+            throw "Expected one x86 NTS PHP artifact, found $($zips.Count)."
+          }
+          $phpVersion = [regex]::Match($zips[0].Name, '^php-(.+?)-nts-Win32-v[sc]\d+-').Groups[1].Value
+
+          Import-Module (Join-Path $env:GITHUB_WORKSPACE 'php\BuildPhp') -Force
+          $cacheInfo = Get-DepsCacheInfo `
+            -PhpVersion $phpVersion `
+            -Arch x86 `
+            -LibsBuildRuns $env:LIBS_BUILD_RUNS `
+            -IncludeDefaultRunsKey
+          Set-Content -Path packages.txt -Value ($cacheInfo.Packages -join "`n")
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "php-version=$phpVersion"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "binary-artifact=$($zips[0].Name)"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "cache-key=$($cacheInfo.CacheKey)"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "cache-dir=$($cacheInfo.CacheDir)"
+
+      - name: Cache dependencies
+        id: cache-deps
+        uses: actions/cache@v5
+        with:
+          path: ${{ steps.cache-key.outputs.cache-dir }}
+          key: ${{ steps.cache-key.outputs.cache-key }}-${{ hashFiles('packages.txt') }}
+
+      - name: Install debugger and symbols
+        shell: pwsh
+        env:
+          BINARY_ARTIFACT: ${{ steps.cache-key.outputs.binary-artifact }}
+          PHP_VERSION: ${{ steps.cache-key.outputs.php-version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $debugRoot = Join-Path "$env:SystemDrive\" 'php-worker-debug-cdb'
+          $dumpDirectory = Join-Path $debugRoot 'dumps'
+          $symbolDirectory = Join-Path $debugRoot 'symbols'
+          $logDirectory = Join-Path $debugRoot 'logs'
+          Remove-Item -LiteralPath $debugRoot -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -Path $dumpDirectory, $symbolDirectory, $logDirectory -ItemType Directory -Force | Out-Null
+
+          $cdb = Get-Item 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x86\cdb.exe' `
+            -ErrorAction SilentlyContinue
+          if ($null -eq $cdb) {
+            $installer = Get-ItemProperty 'HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' |
+              Where-Object { $_.DisplayName -match 'Windows Software Development Kit' -and $_.BundleCachePath } |
+              Sort-Object DisplayVersion -Descending |
+              Select-Object -First 1
+            if ($null -eq $installer) {
+              throw 'The Windows SDK installer was not found.'
+            }
+            $install = Start-Process -FilePath $installer.BundleCachePath `
+              -ArgumentList @('/features', 'OptionId.WindowsDesktopDebuggers', '/q', '/norestart') `
+              -Wait -PassThru
+            if ($install.ExitCode -ne 0) {
+              throw "Installing the Windows debugging tools failed with exit code $($install.ExitCode)."
+            }
+            $cdb = Get-Item 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x86\cdb.exe' `
+              -ErrorAction SilentlyContinue
+          }
+          if ($null -eq $cdb) {
+            throw 'The x86 cdb.exe was not installed.'
+          }
+
+          $debugPacks = @(
+            Get-ChildItem -Path $env:GITHUB_WORKSPACE `
+              -Filter "php-debug-pack-$env:PHP_VERSION-nts-Win32-v*-x86.zip" -File
+          )
+          if ($debugPacks.Count -ne 1) {
+            throw "Expected one x86 NTS debug pack for PHP $env:PHP_VERSION, found $($debugPacks.Count)."
+          }
+          Expand-Archive -LiteralPath $debugPacks[0].FullName -DestinationPath $symbolDirectory -Force
+
+          $binaryArtifact = Get-Item (Join-Path $env:GITHUB_WORKSPACE $env:BINARY_ARTIFACT)
+          @($binaryArtifact, $debugPacks[0]) | ForEach-Object {
+            [PSCustomObject]@{
+              name = $_.Name
+              length = $_.Length
+              sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            }
+          } | ConvertTo-Json | Set-Content (Join-Path $debugRoot 'build-artifacts.json')
+
+          $symbolCache = Join-Path $debugRoot 'microsoft-symbols'
+          $symbolPath = "$symbolDirectory;srv*$symbolCache*https://msdl.microsoft.com/download/symbols"
+          Add-Content -Path $env:GITHUB_ENV -Value "DEBUG_ROOT=$debugRoot"
+          Add-Content -Path $env:GITHUB_ENV -Value "DEBUG_CDB=$($cdb.FullName)"
+          Add-Content -Path $env:GITHUB_ENV -Value "DEBUG_SYMBOL_PATH=$symbolPath"
+
+      - name: Test PHP under CDB
+        shell: pwsh
+        continue-on-error: true
+        env:
+          DEPS_DIR: ${{ steps.cache-key.outputs.cache-dir }}
+          DEPS_CACHE_HIT: ${{ steps.cache-deps.outputs.cache-hit }}
+          LIBS_BUILD_RUNS: ${{ inputs.libs-build-runs }}
+          GITHUB_TOKEN: ${{ github.token }}
+          PHP_VERSION: ${{ steps.cache-key.outputs.php-version }}
+          PHP_SRC_REPOSITORY: ${{ inputs.php-src-repository }}
+          PHP_SRC_REF: ${{ inputs.php-src-ref }}
+          TEST_DIRECTORIES: ${{ inputs.test-directories }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+          $env:PHP_TEST_CDB = $env:DEBUG_CDB
+          $env:PHP_TEST_DEBUG_ROOT = $env:DEBUG_ROOT
+          $env:PHP_TEST_SYMBOL_PATH = $env:DEBUG_SYMBOL_PATH
+          $testDirectories = @(
+            $env:TEST_DIRECTORIES -split "[,`r`n]+" |
+              ForEach-Object { $_.Trim() } |
+              Where-Object { $_ -ne '' }
+          )
+          if ($testDirectories.Count -eq 0) {
+            throw 'No test directories were provided.'
+          }
+          Import-Module (Join-Path $env:GITHUB_WORKSPACE 'php\BuildPhp') -Force
+          Invoke-PhpTests -PhpVersion $env:PHP_VERSION `
+                          -Arch x86 `
+                          -Ts nts `
+                          -Opcache opcache `
+                          -TestType php `
+                          -SourceRepository $env:PHP_SRC_REPOSITORY `
+                          -SourceRef $env:PHP_SRC_REF `
+                          -TestDirectories $testDirectories
+
+      - name: Analyze crash dumps
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $PSNativeCommandUseErrorActionPreference = $false
+          $analysisDirectory = Join-Path $env:DEBUG_ROOT 'analysis'
+          New-Item -Path $analysisDirectory -ItemType Directory -Force | Out-Null
+          Get-ChildItem -Path $env:GITHUB_WORKSPACE -Filter 'test-x86-nts-opcache-php.*' -File `
+            -ErrorAction SilentlyContinue |
+            Copy-Item -Destination (Join-Path $env:DEBUG_ROOT 'logs') -Force
+
+          $dumps = @(
+            Get-ChildItem -Path (Join-Path $env:DEBUG_ROOT 'dumps') -Filter '*.dmp' `
+              -File -ErrorAction SilentlyContinue
+          )
+          foreach ($dump in $dumps) {
+            $analysis = Join-Path $analysisDirectory ($dump.BaseName + '.txt')
+            & $env:DEBUG_CDB `
+              -z $dump.FullName `
+              -y $env:DEBUG_SYMBOL_PATH `
+              -c '!sym noisy; .reload /f; .lastevent; .exr -1; !analyze -v; kv 100; ~* kv 40; lm; q' *>&1 |
+              Set-Content -LiteralPath $analysis
+          }
+
+          $inventory = foreach ($dump in $dumps) {
+            [PSCustomObject]@{
+              name = $dump.Name
+              length = $dump.Length
+              sha256 = (Get-FileHash -LiteralPath $dump.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            }
+          }
+          ConvertTo-Json -InputObject @($inventory) -Depth 3 |
+            Set-Content (Join-Path $env:DEBUG_ROOT 'dump-inventory.json')
+
+          Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = (Get-Date).AddHours(-2) } -ErrorAction SilentlyContinue |
+            Where-Object { $_.ProviderName -in @('Application Error', 'Windows Error Reporting') } |
+            Format-List TimeCreated, Id, LevelDisplayName, ProviderName, Message |
+            Out-File (Join-Path $env:DEBUG_ROOT 'logs\windows-application-errors.txt')
+
+          if ($dumps.Count -eq 0) {
+            Set-Content -Path (Join-Path $analysisDirectory 'no-dumps.txt') `
+              -Value 'CDB did not capture a PHP crash dump.'
+            throw 'CDB did not capture a PHP crash dump; inspect the uploaded live debugger log.'
+          }
+
+      - name: Upload debugger output
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: php-worker-debug-cdb
+          path: ${{ env.DEBUG_ROOT }}
+          if-no-files-found: warn
+          retention-days: 3

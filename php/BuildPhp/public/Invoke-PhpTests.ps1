@@ -147,6 +147,9 @@ function Invoke-PhpTests {
         }
 
         $workers = $settings.workers
+        if(-not [string]::IsNullOrWhiteSpace($env:PHP_TEST_CDB)) {
+            $workers = ""
+        }
         if($workers -ne "" -and -not $compatPatchApplied) {
             $workers = "-j2"
         }
@@ -159,7 +162,45 @@ function Invoke-PhpTests {
             Remove-Item $testLogFile -Force
         }
 
-        & $buildDirectory\phpbin\php.exe @params 2>&1 | Tee-Object -FilePath $testLogFile | Out-Host
+        if(-not [string]::IsNullOrWhiteSpace($env:PHP_TEST_CDB)) {
+            if(-not (Test-Path -LiteralPath $env:PHP_TEST_CDB -PathType Leaf)) {
+                throw "CDB executable not found: $env:PHP_TEST_CDB"
+            }
+            if([string]::IsNullOrWhiteSpace($env:PHP_TEST_DEBUG_ROOT) -or
+               [string]::IsNullOrWhiteSpace($env:PHP_TEST_SYMBOL_PATH)) {
+                throw "PHP_TEST_DEBUG_ROOT and PHP_TEST_SYMBOL_PATH are required with PHP_TEST_CDB."
+            }
+            if($env:PHP_TEST_DEBUG_ROOT -match '\s') {
+                throw "PHP_TEST_DEBUG_ROOT cannot contain whitespace."
+            }
+
+            $dumpDirectory = Join-Path $env:PHP_TEST_DEBUG_ROOT 'dumps'
+            $logDirectory = Join-Path $env:PHP_TEST_DEBUG_ROOT 'logs'
+            New-Item -Path $dumpDirectory, $logDirectory -ItemType Directory -Force | Out-Null
+            $dumpPath = Join-Path $dumpDirectory 'php-worker-crash.dmp'
+            $cdbDumpPath = $dumpPath.Replace('\', '\\')
+            $debugAction = ".echo PHP_TEST_CRASH; .lastevent; .exr -1; .dump /mA /u $cdbDumpPath; kv 100; ~* kv 40; lm; q"
+            $commandFile = Join-Path $logDirectory 'cdb-startup.txt'
+            @(
+                "sxd -c2 `"$debugAction`" *"
+                "sxe -c `"$debugAction`" -c2 `"$debugAction`" 0xc0000409"
+                'sxi ibp'
+                'g'
+            ) | Set-Content -LiteralPath $commandFile -Encoding ascii
+            $debuggerParams = @(
+                '-o',
+                '-G',
+                '-hd',
+                '-y', $env:PHP_TEST_SYMBOL_PATH,
+                '-i', "$buildDirectory\phpbin",
+                '-logo', (Join-Path $logDirectory 'cdb-live.log'),
+                '-cf', $commandFile,
+                "$buildDirectory\phpbin\php.exe"
+            ) + $params
+            & $env:PHP_TEST_CDB @debuggerParams 2>&1 | Tee-Object -FilePath $testLogFile | Out-Host
+        } else {
+            & $buildDirectory\phpbin\php.exe @params 2>&1 | Tee-Object -FilePath $testLogFile | Out-Host
+        }
         $testExitCode = $LASTEXITCODE
 
         if(Test-Path $testResultFile) {
