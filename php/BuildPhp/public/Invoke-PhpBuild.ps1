@@ -35,6 +35,8 @@ function Invoke-PhpBuild {
         if($null -eq $VsConfig.vs) {
             throw "PHP version $PhpVersion is not supported."
         }
+        $majorMinor = if($PhpVersion -eq 'master') { 'master' } else { $PhpVersion.Substring(0, 3) }
+        $withSbom = (Get-Content -Raw -Path (Join-Path $PSScriptRoot '..\config\sbom.json') | ConvertFrom-Json).php.$majorMinor
 
         $currentDirectory = (Get-Location).Path
 
@@ -50,7 +52,8 @@ function Invoke-PhpBuild {
             Add-BuildRequirements -PhpVersion $PhpVersion -Arch $Arch -FetchSrc:$fetchSrc
 
             $configDirectory = Join-Path $PSScriptRoot "..\config\$($VsConfig.vs)\$Arch"
-            $configBatch = Join-Path $configDirectory "config.$Ts.bat"
+            $configName = if($withSbom) { "config.$Ts.sbom.bat" } else { "config.$Ts.bat" }
+            $configBatch = Join-Path $configDirectory $configName
 
             if($fetchSrc) {
                 Copy-Item -Path $PSScriptRoot\..\config -Destination . -Recurse
@@ -78,6 +81,16 @@ function Invoke-PhpBuild {
             $artifacts = if ($Ts -eq "ts") {"..\obj\Release_TS\php-*.zip"} else {"..\obj\Release\php-*.zip"}
             New-Item "$artifactsDirectory" -ItemType "directory" -Force > $null 2>&1
             xcopy $artifacts "$artifactsDirectory\*"
+
+            if($withSbom) {
+                foreach($artifact in Get-ChildItem -Path $artifacts -File) {
+                    $artifactPath = Join-Path $artifactsDirectory $artifact.Name
+                    & "$buildDirectory\php-sdk\bin\phpsdk_sbom.bat" --export "$artifactPath"
+                    if($LASTEXITCODE -ne 0) {
+                        throw "SBOM export failed for $($artifact.Name) with errorlevel $LASTEXITCODE"
+                    }
+                }
+            }
             if($fetchSrc) {
                 Move-Item "$buildDirectory\php-$PhpVersion-src.zip" "$artifactsDirectory\"
             }
