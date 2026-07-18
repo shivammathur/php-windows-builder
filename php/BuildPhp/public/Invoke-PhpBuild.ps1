@@ -83,7 +83,7 @@ function Invoke-PhpBuild {
             xcopy $artifacts "$artifactsDirectory\*"
 
             if($withSbom) {
-                foreach($artifact in Get-ChildItem -Path $artifacts -File) {
+                foreach($artifact in Get-ChildItem -Path $artifacts -File | Where-Object { $_.Name -notmatch '^php-(debug|devel|test)-pack-' }) {
                     $artifactPath = Join-Path $artifactsDirectory $artifact.Name
                     & "$buildDirectory\php-sdk\bin\phpsdk_sbom.bat" --export "$artifactPath"
                     if($LASTEXITCODE -ne 0) {
