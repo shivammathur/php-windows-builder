@@ -19,6 +19,7 @@ on:
 jobs:
   php:
     strategy:
+      fail-fast: false
       matrix:
         arch: [x64, x86]
         ts: [nts, ts]
