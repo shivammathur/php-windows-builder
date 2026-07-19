@@ -6,6 +6,9 @@ on:
       php-version:
         description: 'PHP version to build'
         required: true
+      php-src-ref:
+        description: 'Optional php-src branch, tag, or commit'
+        required: false
       upload:
         type: choice
         options: ['true', 'false']
@@ -28,6 +31,7 @@ jobs:
         uses: ./php
         with:
           php-version: ${{ inputs.php-version }}
+          php-src-ref: ${{ inputs.php-src-ref }}
           arch: ${{ matrix.arch }}
           ts: ${{ matrix.ts }}
         env:
