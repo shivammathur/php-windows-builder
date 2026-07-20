@@ -35,9 +35,6 @@ function Invoke-PhpBuild {
         if($null -eq $VsConfig.vs) {
             throw "PHP version $PhpVersion is not supported."
         }
-        $majorMinor = if($PhpVersion -eq 'master') { 'master' } else { $PhpVersion.Substring(0, 3) }
-        $withSbom = (Get-Content -Raw -Path (Join-Path $PSScriptRoot '..\config\sbom.json') | ConvertFrom-Json).php.$majorMinor
-
         $currentDirectory = (Get-Location).Path
 
         $tempDirectory = [System.IO.Path]::GetTempPath()
@@ -52,8 +49,6 @@ function Invoke-PhpBuild {
             Add-BuildRequirements -PhpVersion $PhpVersion -Arch $Arch -FetchSrc:$fetchSrc
 
             $configDirectory = Join-Path $PSScriptRoot "..\config\$($VsConfig.vs)\$Arch"
-            $configName = if($withSbom) { "config.$Ts.sbom.bat" } else { "config.$Ts.bat" }
-            $configBatch = Join-Path $configDirectory $configName
 
             if($fetchSrc) {
                 Copy-Item -Path $PSScriptRoot\..\config -Destination . -Recurse
@@ -63,6 +58,11 @@ function Invoke-PhpBuild {
             } else {
                 $buildPath = $currentDirectory
             }
+
+            $sbomConfig = Join-Path $buildPath 'win32\build\config.w32'
+            $withSbom = (Test-Path -LiteralPath $sbomConfig) -and (Select-String -LiteralPath $sbomConfig -SimpleMatch 'ARG_WITH("sbom"' -Quiet)
+            $configName = if($withSbom) { "config.$Ts.sbom.bat" } else { "config.$Ts.bat" }
+            $configBatch = Join-Path $configDirectory $configName
 
             $buildParent = Split-Path -Path $buildPath -Parent
             $artifactsDirectory = Join-Path $currentDirectory 'artifacts'
