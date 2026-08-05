@@ -87,6 +87,7 @@
         'Invoke-PhpSdkStarter',
         'Set-EnchantTestEnvironment',
         'Set-FirebirdTestEnvironment',
+        'Set-HMailServerTestEnvironment',
         'Set-MsSqlTestEnvironment',
         'Set-MySqlTestEnvironment',
         'Set-NetSecurityProtocolType',

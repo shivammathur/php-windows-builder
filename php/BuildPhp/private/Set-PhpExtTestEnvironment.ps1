@@ -65,6 +65,14 @@ function Set-PhpExtTestEnvironment {
                 }
             },
             [pscustomobject] @{
+                Match = @('imap')
+                Command = 'Set-HMailServerTestEnvironment'
+                Parameters = @{
+                    PhpBinDirectory = "$BuildDirectory\phpbin"
+                    TestsDirectoryPath = "$BuildDirectory\$TestsDirectory"
+                }
+            },
+            [pscustomobject] @{
                 Match = @('openssl')
                 Command = 'Set-OpenSslTestEnvironment'
                 Parameters = @{
