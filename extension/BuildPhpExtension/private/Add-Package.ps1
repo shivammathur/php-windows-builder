@@ -8,7 +8,8 @@ function Add-Package {
     [OutputType()]
     param (
         [Parameter(Mandatory = $true, Position=0, HelpMessage='Extension Configuration')]
-        [PSCustomObject] $Config
+        [PSCustomObject] $Config,
+        [PSCustomObject] $SbomMetadata = $null
     )
     begin {
     }
@@ -108,8 +109,28 @@ function Add-Package {
                 Add-Content "artifact=$artifact.zip" -Path $env:GITHUB_OUTPUT -Encoding utf8
             }
 
+            if($env:SBOM -eq 'true') {
+                Set-Location $currentDirectory
+                Add-ExtensionSbom -Config $Config `
+                                  -Metadata $SbomMetadata `
+                                  -OutputDirectory (Join-Path $currentDirectory 'artifacts') `
+                                  -ArchiveName "$artifact.zip"
+                Set-Location $currentDirectory\artifacts
+            }
+
             Compress-Archive -Path * -DestinationPath "$artifact.zip"
-            Remove-Item * -Recurse -Force -Exclude *.zip
+            if($env:SBOM -eq 'true') {
+                Set-Location $currentDirectory
+                Add-ExtensionSbom -Config $Config `
+                                  -OutputDirectory (Join-Path $currentDirectory 'artifacts') `
+                                  -Artifact (Join-Path $currentDirectory "artifacts\$artifact.zip")
+                Set-Location $currentDirectory\artifacts
+            }
+            $packageFiles = @('*.zip')
+            if($env:SBOM -eq 'true') {
+                $packageFiles += '*.zip.*.json'
+            }
+            Remove-Item * -Recurse -Force -Exclude $packageFiles
 
             Set-Location $currentDirectory
             New-Item -Path $currentDirectory\artifacts\logs -ItemType Directory -Force | Out-Null

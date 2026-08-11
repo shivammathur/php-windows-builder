@@ -66,6 +66,14 @@ function Invoke-PhpBuildExtension {
 
         $extension = Get-Extension -ExtensionUrl $source.url -ExtensionRef $source.ref -PhpVersion $PhpVersion -BuildDirectory $buildDirectory -LocalSrc $source.local
 
+        $sbomMetadata = $null
+        if($env:SBOM -eq 'true') {
+            $sbomMetadata = Get-ExtensionSbomMetadata -SourcePath $buildDirectory `
+                                                         -Name $extension `
+                                                         -Version $source.ref `
+                                                         -SourceUrl $source.url
+        }
+
         Set-Location "$buildDirectory"
 
         $config = Add-BuildRequirements -Extension $extension `
@@ -75,14 +83,13 @@ function Invoke-PhpBuildExtension {
                                         -Ts $Ts `
                                         -VsVersion $VsData.vs `
                                         -VsToolset $VsData.toolset
-
         Invoke-Build -Config $config
 
         if($env:RUN_TESTS -eq 'true') {
             Invoke-Tests -Config $config
         }
 
-        Add-Package -Config $config
+        Add-Package -Config $config -SbomMetadata $sbomMetadata
 
         Set-Location $currentDirectory
 

@@ -40,6 +40,12 @@ on:
         description: 'Run tests after building the extension'
         required: false
         default: 'false'
+      sbom:
+        type: choice
+        options: ['true', 'false']
+        description: Generate SBOM for the extension builds
+        required: false
+        default: 'false'
       test-runner:
         description: 'Test runner to use'
         required: false
@@ -93,6 +99,7 @@ jobs:
           args: ${{ inputs.args }}
           libs: ${{ inputs.libs }}
           run-tests: ${{ inputs.run-tests }}
+          sbom: ${{ inputs.sbom }}
           test-runner: ${{ inputs.test-runner }}
           test-runner-args: ${{ inputs.test-runner-args }}
           build-directory: C:\build

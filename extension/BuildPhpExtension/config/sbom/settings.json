@@ -1,0 +1,25 @@
+{
+  "tools": {
+    "syft": {
+      "version": "1.51.0",
+      "url": "https://github.com/anchore/syft/releases/download/v1.51.0/syft_1.51.0_windows_amd64.zip",
+      "sha256": "fc5ffaeffb993576ece9c791da5a688fb2c8969a1479bbfe58583672c64da336",
+      "archive": "zip",
+      "executable": "syft.exe"
+    },
+    "scancode": {
+      "version": "32.5.0",
+      "url": "https://github.com/aboutcode-org/scancode-toolkit/releases/download/v32.5.0/scancode-toolkit-v32.5.0_py3.12-windows.zip",
+      "sha256": "d659258d8067d36403f8a4df21ca0446b1a56f615754c92139d8a264d57abe49",
+      "archive": "zip",
+      "executable": "scancode-toolkit-v32.5.0\\scancode.bat"
+    },
+    "vexctl": {
+      "version": "0.4.4",
+      "url": "https://github.com/openvex/vexctl/releases/download/v0.4.4/vexctl-windows-amd64.exe",
+      "sha256": "af3fb09d2a3dc4f2ac2db70e7877b2da3b9650aa74cd2347a1a2b7885bf7fcfe",
+      "archive": "file",
+      "executable": "vexctl.exe"
+    }
+  }
+}

@@ -1,0 +1,8 @@
+file:
+  metadata:
+    selection: none
+package:
+  exclude-binary-overlap-by-ownership: false
+relationships:
+  package-file-ownership: false
+  package-file-ownership-overlap: false

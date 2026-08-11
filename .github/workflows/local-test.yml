@@ -143,6 +143,8 @@ jobs:
 
       - name: Build PHP
         shell: pwsh
+        env:
+          SBOM: ${{ inputs.sbom }}
         run: |
           $buildPhpManifest = Join-Path $env:BUILDPHP_MODULE_BASE 'BuildPhp.psd1'
           $phpSourceRoot = Join-Path $env:GITHUB_WORKSPACE 'php-src'
@@ -157,8 +159,7 @@ jobs:
           Push-Location $phpSourceRoot
           try {
               Invoke-PhpBuild -Arch $env:BUILD_ARCH `
-                              -Ts $env:BUILD_TS `
-                              -Sbom ('${{ inputs.sbom }}' -eq 'true')
+                              -Ts $env:BUILD_TS
           } finally {
               Pop-Location
           }
@@ -167,6 +168,7 @@ jobs:
         shell: pwsh
         env:
           RUN_TESTS: 'false'
+          SBOM: ${{ inputs.sbom }}
         run: |
           $xdebugBuildRoot = Join-Path $env:RUNNER_TEMP 'xdebug-build'
           Remove-Item -Path $xdebugBuildRoot -Recurse -Force -ErrorAction SilentlyContinue
@@ -220,6 +222,110 @@ jobs:
 
           Expand-Archive -Path $phpZip.FullName -DestinationPath $phpExtract -Force
           Expand-Archive -Path $xdebugZip.FullName -DestinationPath $xdebugExtract -Force
+
+          if ('${{ inputs.sbom }}' -eq 'true') {
+              $sbomDirectory = Join-Path $xdebugExtract 'extras\sbom'
+              foreach ($format in @('cdx', 'spdx')) {
+                  $embedded = Join-Path $sbomDirectory "xdebug.$format.json"
+                  $sidecar = "$($xdebugZip.FullName).$format.json"
+                  if (-not (Test-Path -LiteralPath $embedded -PathType Leaf)) {
+                      throw "Xdebug archive does not contain $format SBOM metadata."
+                  }
+                  if (-not (Test-Path -LiteralPath $sidecar -PathType Leaf)) {
+                      throw "Xdebug archive does not have a $format SBOM sidecar."
+                  }
+              }
+              $embeddedOpenVex = Test-Path -LiteralPath (Join-Path $sbomDirectory 'xdebug.openvex.json') -PathType Leaf
+              $sidecarOpenVex = Test-Path -LiteralPath "$($xdebugZip.FullName).openvex.json" -PathType Leaf
+              if ($embeddedOpenVex -ne $sidecarOpenVex) {
+                  throw 'The embedded and sidecar OpenVEX documents do not match.'
+              }
+
+              $cycloneDx = Get-Content -LiteralPath (Join-Path $sbomDirectory 'xdebug.cdx.json') -Raw | ConvertFrom-Json
+              $spdx = Get-Content -LiteralPath (Join-Path $sbomDirectory 'xdebug.spdx.json') -Raw | ConvertFrom-Json
+              if ($cycloneDx.metadata.component.name -ne 'xdebug' -or
+                  $cycloneDx.metadata.component.version -ne $env:XDEBUG_VERSION -or
+                  $cycloneDx.metadata.component.type -ne 'library') {
+                  throw 'CycloneDX metadata does not identify the Xdebug extension.'
+              }
+              if ($cycloneDx.metadata.component.licenses.expression -notcontains 'Xdebug-1.03' -or
+                  $cycloneDx.metadata.component.authors.name -notcontains 'Derick Rethans') {
+                  throw 'CycloneDX metadata does not contain Xdebug source details.'
+              }
+              if ($cycloneDx.metadata.tools.components.name -notcontains 'syft' -or
+                  $cycloneDx.metadata.tools.components.name -notcontains 'scancode-toolkit') {
+                  throw 'CycloneDX metadata does not identify its generators.'
+              }
+              if ($cycloneDx.metadata.component.supplier.name -eq 'The PHP Group') {
+                  throw 'CycloneDX assigned the PHP runtime supplier to the extension archive.'
+              }
+              if ($cycloneDx.components.name -notcontains 'php' -or $cycloneDx.components.name -notcontains 'zlib') {
+                  throw 'CycloneDX metadata does not contain the PHP and zlib dependencies.'
+              }
+              if ($spdx.packages.name -notcontains 'php' -or $spdx.packages.name -notcontains 'zlib') {
+                  throw 'SPDX metadata does not contain the PHP and zlib dependencies.'
+              }
+              $rootRelationship = $spdx.relationships | Where-Object {
+                  $_.spdxElementId -eq 'SPDXRef-DOCUMENT' -and $_.relationshipType -eq 'DESCRIBES'
+              } | Select-Object -First 1
+              $rootPackage = $spdx.packages | Where-Object {
+                  $_.SPDXID -eq $rootRelationship.relatedSpdxElement
+              } | Select-Object -First 1
+              if (-not $rootPackage) {
+                  throw 'SPDX metadata does not describe the extension archive.'
+              }
+              if ($rootPackage.name -ne 'xdebug' -or
+                  $rootPackage.versionInfo -ne $env:XDEBUG_VERSION -or
+                  $rootPackage.primaryPackagePurpose -ne 'LIBRARY' -or
+                  $rootPackage.licenseDeclared -ne 'Xdebug-1.03') {
+                  throw 'SPDX metadata does not contain Xdebug source details.'
+              }
+              if ($rootPackage.originator -notmatch 'Derick Rethans') {
+                  throw 'SPDX metadata does not identify the Xdebug author.'
+              }
+              if ($rootPackage.supplier -eq 'Organization: The PHP Group') {
+                  throw 'SPDX assigned the PHP runtime supplier to the extension archive.'
+              }
+              if (-not (Test-Path -LiteralPath (Join-Path $sbomDirectory 'dependencies') -PathType Container)) {
+                  throw 'The extension archive does not retain dependency SBOM evidence.'
+              }
+
+              $sbomFiles = @(
+                  Get-ChildItem -LiteralPath $sbomDirectory -File -Filter '*.json' -Recurse
+                  Get-ChildItem -LiteralPath $xdebugArtifacts -File -Filter "$($xdebugZip.Name).*.json"
+              )
+              foreach ($sbomFile in $sbomFiles) {
+                  $sbomContent = Get-Content -LiteralPath $sbomFile.FullName -Raw
+                  if ($sbomContent -match '(?i)(\b[a-z]:[\\/]|/users/|/tmp/|syft-archive-contents-|appdata[\\/]local[\\/]temp)') {
+                      throw "SBOM document $($sbomFile.Name) exposes an absolute build or temporary path."
+                  }
+                  if ($sbomContent -match '(?i)("syft:|anchore\.com/syft/)') {
+                      throw "SBOM document $($sbomFile.Name) exposes Syft implementation metadata."
+                  }
+              }
+
+              $archiveHash = (Get-FileHash -LiteralPath $xdebugZip.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+              $sidecarCycloneDx = Get-Content -LiteralPath "$($xdebugZip.FullName).cdx.json" -Raw | ConvertFrom-Json
+              $sidecarCycloneDxHashes = $sidecarCycloneDx.metadata.component.hashes | Where-Object {
+                  $_.alg -eq 'SHA-256'
+              } | ForEach-Object { $_.content }
+              if ($sidecarCycloneDxHashes -notcontains $archiveHash) {
+                  throw 'CycloneDX sidecar does not contain the extension archive hash.'
+              }
+              $sidecarSpdx = Get-Content -LiteralPath "$($xdebugZip.FullName).spdx.json" -Raw | ConvertFrom-Json
+              $sidecarRootRelationship = $sidecarSpdx.relationships | Where-Object {
+                  $_.spdxElementId -eq 'SPDXRef-DOCUMENT' -and $_.relationshipType -eq 'DESCRIBES'
+              } | Select-Object -First 1
+              $sidecarRoot = $sidecarSpdx.packages | Where-Object {
+                  $_.SPDXID -eq $sidecarRootRelationship.relatedSpdxElement
+              } | Select-Object -First 1
+              if (-not $sidecarRoot) {
+                  throw 'SPDX sidecar does not describe the extension archive.'
+              }
+              if ($sidecarRoot.checksums.checksumValue -notcontains $archiveHash) {
+                  throw 'SPDX sidecar does not contain the extension archive hash.'
+              }
+          }
 
           $xdebugDll = Get-ChildItem -Path $xdebugExtract -Filter 'php_xdebug*.dll' -File -Recurse | Select-Object -First 1
           if (-not $xdebugDll) {

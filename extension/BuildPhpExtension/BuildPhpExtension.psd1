@@ -69,6 +69,8 @@
         'Add-Dependencies',
         'Add-Extension',
         'Add-ExtensionDependencies',
+        'Add-ExtensionSbom',
+        'Add-ExtensionSbomMetadata',
         'Add-Extensions',
         'Add-OciDB',
         'Add-OciSdk',
@@ -85,6 +87,8 @@
         'Get-Extension',
         'Get-ExtensionConfig',
         'Get-ExtensionName',
+        'Get-ExtensionSbomDependencies',
+        'Get-ExtensionSbomMetadata',
         'Get-ExtensionSource',
         'Get-File',
         'Get-LibrariesFromConfig',
@@ -96,6 +100,8 @@
         'Get-PhpSdk',
         'Get-PhpSrc',
         'Get-RecursiveFilePath',
+        'Get-SbomConfiguration',
+        'Get-SbomTool',
         'Get-TempFiles',
         'Get-VsCacheInfo',
         'Get-VsInstallPath',
@@ -103,9 +109,15 @@
         'Get-VsVersionHelper',
         'Invoke-Build',
         'Invoke-CleanupTempFiles',
+        'Invoke-ExtensionSbomGenerator',
         'Invoke-RestoreVsToolsetCache',
         'Invoke-SaveVsToolsetCache',
         'Invoke-Tests',
+        'ConvertFrom-SyftSbom',
+        'ConvertTo-SbomSlug',
+        'Export-ExtensionSbom',
+        'Merge-ExtensionOpenVex',
+        'Read-SbomJson',
         'Restore-VsToolsetFromCache',
         'Set-AmqpTestEnvironment',
         'Set-GAGroup',
@@ -115,6 +127,7 @@
         'Set-PdoOciTestEnvironment',
         'Set-XdebugTestEnvironment',
         'Sync-VsToolsetCache',
+        'Write-SbomJson',
 
         # Public functions
         'Invoke-PhpBuildExtension'
@@ -174,4 +187,3 @@
     # DefaultCommandPrefix = ''
 
 }
-

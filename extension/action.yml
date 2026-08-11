@@ -35,6 +35,10 @@ inputs:
     description: Run tests after building the extension
     required: false
     default: 'true'
+  sbom:
+    description: Generate SBOM for the extension builds
+    required: false
+    default: 'false'
   test-runner:
     description: Test runner to use
     required: false
@@ -110,6 +114,7 @@ runs:
         TEST_OPCACHE_MODE: ${{inputs.test-opcache-mode}}
         TEST_WORKERS: ${{inputs.test-workers}}
         BUILD_DIRECTORY: ${{inputs.build-directory}}
+        SBOM: ${{inputs.sbom}}
         AUTH_TOKEN: ${{inputs.auth-token}}
         AUTO_DETECT_ARGS: ${{env.auto-detect-args}}
         AUTO_DETECT_LIBS: ${{env.auto-detect-libs}}

@@ -90,6 +90,7 @@ Build a specific version of a PHP extension.
     arch: x64
     args: --with-xdebug
     libs: zlib
+    sbom: true
 ```
 
 #### Inputs
@@ -103,6 +104,7 @@ Build a specific version of a PHP extension.
 - `libs` (optional): Libraries required for the extension.
 - `build-directory` (optional): The directory to build the extension in, defaults to the user's temporary directory.
 - `run-tests` (optional): Run the extension tests. Defaults to `true`.
+- `sbom` (optional): Generate SBOM for the extension builds.
 - `test-runner` (optional): The test runner to use. Defaults to `run-tests.php`.
 - `test-runner-args` (optional): Arguments to pass to the test runner.
 - `test-opcache-mode` (optional): Run tests with opcache `on`, `off` or `both`. Defaults to `off`.
