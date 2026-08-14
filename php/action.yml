@@ -21,8 +21,12 @@ inputs:
     required: false
     default: 'false'
   libs-build-runs:
-    description: Comma-separated list of GitHub Actions run IDs from winlibs/winlib-builder to download artifacts from
+    description: Comma-separated list of GitHub Actions run IDs from the library build repository
     required: false
+  libs-build-repository:
+    description: Repository containing the library build workflow runs
+    required: false
+    default: winlibs/winlib-builder
   github-token:
     description: GitHub token for accessing private repositories
     required: false
@@ -34,6 +38,7 @@ runs:
     - name: Build PHP
       shell: pwsh
       env:
+        LIBS_BUILD_REPOSITORY: ${{ inputs.libs-build-repository }}
         LIBS_BUILD_RUNS: ${{ inputs.libs-build-runs }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
         SBOM: ${{ inputs.sbom }}

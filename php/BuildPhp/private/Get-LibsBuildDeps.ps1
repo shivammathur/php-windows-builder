@@ -28,6 +28,15 @@ function Get-LibsBuildDeps {
         return $downloadedLibs
     }
 
+    $repository = if ($env:LIBS_BUILD_REPOSITORY) {
+        $env:LIBS_BUILD_REPOSITORY.Trim()
+    } else {
+        'winlibs/winlib-builder'
+    }
+    if ($repository -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') {
+        throw "Invalid library build repository: $repository"
+    }
+
     $headers = @{
         'Accept' = 'application/vnd.github+json'
         'X-GitHub-Api-Version' = '2022-11-28'
@@ -42,7 +51,7 @@ function Get-LibsBuildDeps {
 
     foreach ($runId in $runIds) {
         Write-Host "Processing workflow run: $runId"
-        $url = "https://api.github.com/repos/winlibs/winlib-builder/actions/runs/$runId/artifacts"
+        $url = "https://api.github.com/repos/$repository/actions/runs/$runId/artifacts"
         $response = Invoke-RestMethod -Uri $url -Headers $headers -Method Get
 
         if ($response.total_count -eq 0) {
