@@ -3,7 +3,7 @@
 # Instead, refer to the workflows in the examples/ directory.
 
 name: Build PHP Extension From PECL
-run-name: Build PHP Extension ${{ inputs.extension-url }}, ${{ inputs.extension-ref }}
+run-name: "Build PHP Extension ${{ inputs.extension-url }}-${{ inputs.extension-ref }} for PHP ${{ inputs.php-version-list }} (${{ inputs.run-tests == 'true' && 'with tests' || 'build only' }})"
 on:
   workflow_dispatch:
     inputs:
@@ -33,6 +33,9 @@ on:
         required: false
       libs:
         description: 'Libraries'
+        required: false
+      libs-build-runs:
+        description: 'Comma-separated winlibs/winlib-builder workflow run IDs'
         required: false
       run-tests:
         type: choice
@@ -81,6 +84,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+      - name: Download custom library builds
+        if: ${{ inputs.libs-build-runs != '' }}
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LIBS_BUILD_RUNS: ${{ inputs.libs-build-runs }}
+        run: |
+          Import-Module (Join-Path $(pwd).Path '\php\BuildPhp') -Force
+          New-Item C:\build\deps -ItemType Directory -Force | Out-Null
+          $customLibraries = @(Get-LibsBuildDeps -Arch '${{ matrix.arch }}' -Destination 'C:\build\deps')
+          "WINLIB_LIBRARIES=$($customLibraries -join ',')" >> $env:GITHUB_ENV
       - name: Build the extension
         uses: ./extension
         with:
@@ -93,13 +107,13 @@ jobs:
           args: ${{ inputs.args }}
           libs: ${{ inputs.libs }}
           run-tests: ${{ inputs.run-tests }}
-          test-runner: ${{ inputs.test-runner }}
+          test-runner: ${{ inputs.run-tests == 'true' && inputs.extension-url == 'https://pecl.php.net/rrd' && format('{0}/.github/ci/run-rrd-tests.php', github.workspace) || inputs.test-runner }}
           test-runner-args: ${{ inputs.test-runner-args }}
           build-directory: C:\build
         env:
           artifact-naming-scheme: pecl
           auto-detect-args: true
-          auto-detect-libs: true
+          auto-detect-libs: ${{ inputs.libs-build-runs == '' && 'true' || 'false' }}
           no-debug-symbols-ddtrace: true
 
   artifact:
@@ -130,8 +144,8 @@ jobs:
         id: stage
         run: |
           extension=$(basename "${{ inputs.extension-url }}" | tr '[:upper:]' '[:lower:]')
-          mkdir -p /tmp/$extension/$extension/${{ inputs.extension-ref }}/
-          cp -a artifact/* /tmp/$extension/$extension/${{ inputs.extension-ref }}/          
+          mkdir -p "/tmp/$extension/$extension/${{ inputs.extension-ref }}/"
+          cp -a artifact/* "/tmp/$extension/$extension/${{ inputs.extension-ref }}/"
           echo "artifact-name=$extension-${{ inputs.extension-ref }}" >> "$GITHUB_OUTPUT"
           echo "artifact-path=/tmp/$extension" >> "$GITHUB_OUTPUT"
 

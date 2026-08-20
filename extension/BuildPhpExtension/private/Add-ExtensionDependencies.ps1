@@ -13,40 +13,45 @@ Function Add-ExtensionDependencies {
     begin {
     }
     process {
+        $customLibraries = @(($env:WINLIB_LIBRARIES -split ',') | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' })
         if($Config.extension_libraries.Count -ne 0) {
             Add-StepLog "Adding libraries (third-party)"
         }
         $Config.extension_libraries | ForEach-Object {
             $library = $_.split('-')[0]
-            try {
-                switch ($_)
-                {
-                    boost {
-                        Add-Boost
-                    }
-                    instantclient {
-                        Add-OciSdk -Config $Config
-                    }
-                    odbc_cli {
-                        Add-OdbcCli -Config $Config
-                    }
-                    Default {
-                        $url = "https://downloads.php.net/~windows/pecl/deps/$_"
-                        Get-File -Url $url -OutFile $_
-                        Expand-Archive -Path $_ -DestinationPath "..\deps" -Force
-                        if((Test-Path "..\deps\LICENSE") -and (-not(Test-Path "..\deps\LICENSE.$library"))) {
-                            Rename-Item -Path "..\deps\LICENSE" -NewName "LICENSE.$library"
+            if($customLibraries -contains $library) {
+                Add-BuildLog tick "$library" "Using custom Winlibs artifact for $library"
+            } else {
+                try {
+                    switch ($_)
+                    {
+                        boost {
+                            Add-Boost
                         }
-                        if(Test-Path "..\deps\lib\ossl-modules") {
-                            Move-Item -Path "..\deps\lib\ossl-modules\*" -Destination "..\deps\lib"
-                            Remove-Item -Path "..\deps\lib\ossl-modules" -Force -Recurse
+                        instantclient {
+                            Add-OciSdk -Config $Config
+                        }
+                        odbc_cli {
+                            Add-OdbcCli -Config $Config
+                        }
+                        Default {
+                            $url = "https://downloads.php.net/~windows/pecl/deps/$_"
+                            Get-File -Url $url -OutFile $_
+                            Expand-Archive -Path $_ -DestinationPath "..\deps" -Force
+                            if((Test-Path "..\deps\LICENSE") -and (-not(Test-Path "..\deps\LICENSE.$library"))) {
+                                Rename-Item -Path "..\deps\LICENSE" -NewName "LICENSE.$library"
+                            }
+                            if(Test-Path "..\deps\lib\ossl-modules") {
+                                Move-Item -Path "..\deps\lib\ossl-modules\*" -Destination "..\deps\lib"
+                                Remove-Item -Path "..\deps\lib\ossl-modules" -Force -Recurse
+                            }
                         }
                     }
+                    Add-BuildLog tick "$library" "Added $($_ -replace '\.zip$')"
+                } catch {
+                    Add-BuildLog cross "$library" "Failed to download $library"
+                    throw
                 }
-                Add-BuildLog tick "$library" "Added $($_ -replace '\.zip$')"
-            } catch {
-                Add-BuildLog cross "$library" "Failed to download $library"
-                throw
             }
         }
     }
