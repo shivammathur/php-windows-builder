@@ -18,6 +18,29 @@ on:
         description: Add SBOM files to binary archives
         required: false
         default: 'true'
+      runner:
+        type: choice
+        options: [auto, windows-2022, windows-2025-vs2026]
+        description: Windows runner override
+        required: false
+        default: auto
+      vs-version:
+        type: choice
+        options: [auto, vs17, vs18]
+        description: Visual Studio compiler override
+        required: false
+        default: auto
+      architectures:
+        type: choice
+        options: [all, x64]
+        description: Architectures to build
+        required: false
+        default: all
+      run-tests:
+        type: boolean
+        description: Run the full test and smoke-test matrices
+        required: false
+        default: true
 
 jobs:
   resolve-runner:
@@ -41,7 +64,10 @@ jobs:
         shell: bash
         run: |
           read -r major minor < <(awk '/^#define PHP_(MAJOR|MINOR)_VERSION/ { v[++i]=$3 } END { print v[1], v[2] }' php-src/main/php_version.h)
-          runner="$([ "$major" -gt 8 ] || { [ "$major" -eq 8 ] && [ "$minor" -ge 6 ]; } && echo windows-2025-vs2026 || echo windows-2022)"
+          runner='${{ inputs.runner }}'
+          if [ "$runner" = auto ]; then
+            runner="$([ "$major" -gt 8 ] || { [ "$major" -eq 8 ] && [ "$minor" -ge 6 ]; } && echo windows-2025-vs2026 || echo windows-2022)"
+          fi
           echo "PHP source version: $major.$minor; runner: $runner"
           echo "runner=$runner" >> "$GITHUB_OUTPUT"
 
@@ -49,9 +75,12 @@ jobs:
     needs: resolve-runner
     strategy:
       matrix:
-        arch: [x64, x86]
+        arch: ${{ fromJSON(inputs.architectures == 'x64' && '["x64"]' || '["x64", "x86"]') }}
         ts: [nts, ts]
     runs-on: ${{ needs.resolve-runner.outputs.runner }}
+    env:
+      PHP_VS_VERSION_OVERRIDE: ${{ inputs.vs-version != 'auto' && inputs.vs-version || '' }}
+      PHP_DEPS_VERSION_OVERRIDE: ${{ inputs.vs-version == 'vs17' && '8.5' || '' }}
     steps:
       - name: Configure PHP source line endings
         shell: pwsh
@@ -96,14 +125,18 @@ jobs:
           delete-merged: true
 
   tests:
+    if: ${{ inputs.run-tests }}
     needs: [resolve-runner, artifacts]
     strategy:
       matrix:
-        arch: [x64, x86]
+        arch: ${{ fromJSON(inputs.architectures == 'x64' && '["x64"]' || '["x64", "x86"]') }}
         ts: [nts, ts]
         opcache: [opcache, nocache]
         test-type: [php, ext]
     runs-on: ${{ needs.resolve-runner.outputs.runner }}
+    env:
+      PHP_VS_VERSION_OVERRIDE: ${{ inputs.vs-version != 'auto' && inputs.vs-version || '' }}
+      PHP_DEPS_VERSION_OVERRIDE: ${{ inputs.vs-version == 'vs17' && '8.5' || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -167,12 +200,16 @@ jobs:
           path: test-${{matrix.arch}}-${{matrix.ts}}-${{matrix.opcache}}-${{matrix.test-type}}.xml
 
   smoke-tests:
+    if: ${{ inputs.run-tests }}
     strategy:
       matrix:
-        arch: [x64, x86]
+        arch: ${{ fromJSON(inputs.architectures == 'x64' && '["x64"]' || '["x64", "x86"]') }}
         ts: [nts, ts]
     runs-on: ${{ needs.resolve-runner.outputs.runner }}
     needs: [resolve-runner, artifacts]
+    env:
+      PHP_VS_VERSION_OVERRIDE: ${{ inputs.vs-version != 'auto' && inputs.vs-version || '' }}
+      PHP_DEPS_VERSION_OVERRIDE: ${{ inputs.vs-version == 'vs17' && '8.5' || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6

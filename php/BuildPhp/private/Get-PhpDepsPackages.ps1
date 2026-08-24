@@ -36,6 +36,12 @@ function Get-PhpDepsPackages {
                 $depsPhpVersion = $versionParts[0..1] -join '.'
             }
         }
+        if (-not [string]::IsNullOrWhiteSpace($env:PHP_DEPS_VERSION_OVERRIDE)) {
+            if ($env:PHP_DEPS_VERSION_OVERRIDE -notmatch '^(?:\d+\.\d+|master)$') {
+                throw "Invalid PHP dependency version override: $env:PHP_DEPS_VERSION_OVERRIDE"
+            }
+            $depsPhpVersion = $env:PHP_DEPS_VERSION_OVERRIDE
+        }
 
         $seriesUrl = "$baseurl/series/packages-$depsPhpVersion-$VsVersion-$Arch-staging.txt"
         Write-Host "Fetching series listing: $seriesUrl"

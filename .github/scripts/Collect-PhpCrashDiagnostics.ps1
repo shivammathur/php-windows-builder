@@ -195,7 +195,7 @@ $symbolCache = Join-Path $diagnosticsPath 'symbol-cache'
 New-Item -Path $symbolCache -ItemType Directory -Force | Out-Null
 $symbolPath = (@($localSymbolDirectories) + "srv*$symbolCache*https://msdl.microsoft.com/download/symbols") -join ';'
 $sourcePath = $sourceDirectories -join ';'
-$debuggerCommands = '.lines -e; .reload /f; .lastevent; !analyze -v; .ecxr; r; kv 100; ~* kv 100; lmv; !peb; !address -summary; q'
+$debuggerCommands = '.lines -e; .reload /f; .lastevent; !analyze -v; .ecxr; r; kv 100; dv /t /v; dps @rsp L100; x php8!*smm_shared_globals*; x php8!*accel_shared_globals*; dq php8!smm_shared_globals L1; dq poi(php8!smm_shared_globals) L20; dq php8!accel_shared_globals L1; dq poi(php8!accel_shared_globals) L40; dt php8!_zend_smm_shared_globals poi(php8!smm_shared_globals); ~* kv 100; lmv; !peb; !address -summary; q'
 
 foreach ($dump in Get-ChildItem -Path $dumpOutputPath -Filter '*.dmp' -File) {
     $debuggerLog = Join-Path $debuggerOutputPath ($dump.BaseName + '.cdb.txt')

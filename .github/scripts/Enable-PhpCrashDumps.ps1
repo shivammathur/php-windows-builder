@@ -98,7 +98,7 @@ foreach ($debugPack in $debugPacks) {
 $symbolPath = "$symbolDirectory;srv*$symbolCache*https://msdl.microsoft.com/download/symbols"
 @(
     '.lines -e',
-    "sxd -c2 `".dump /ma /u $cdbDumpFile; .lastevent; !analyze -v; .ecxr; r; ln @rip; u @rip-40 @rip+40; kv 100; dv /t /v; dps @rsp L100; !address @rcx; !address @rax; ~* kv 100; lmv; !peb; !address -summary; q`" av",
+    "sxd -c2 `".dump /ma /u $cdbDumpFile; .lastevent; !analyze -v; .ecxr; r; ln @rip; u @rip-40 @rip+40; kv 100; dv /t /v; dps @rsp L100; x php8!*smm_shared_globals*; x php8!*accel_shared_globals*; dq php8!smm_shared_globals L1; dq poi(php8!smm_shared_globals) L20; dq php8!accel_shared_globals L1; dq poi(php8!accel_shared_globals) L40; dt php8!_zend_smm_shared_globals poi(php8!smm_shared_globals); !address @rcx; !address @rax; ~* kv 100; lmv; !peb; !address -summary; q`" av",
     'g'
 ) | Set-Content -Path $debuggerCommandFile -Encoding ascii
 

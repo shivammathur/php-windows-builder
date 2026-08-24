@@ -20,6 +20,20 @@ function Get-VsVersion {
         $VsConfig = ConvertFrom-Json -InputObject $jsonContent
         if($PhpVersion -eq 'master') { $majorMinor = 'master'; } else { $majorMinor = $PhpVersion.Substring(0, 3); }
         $VsVersion = $($VsConfig.php.$majorMinor)
+        if (-not [string]::IsNullOrWhiteSpace($env:PHP_VS_VERSION_OVERRIDE)) {
+            $VsVersion = $env:PHP_VS_VERSION_OVERRIDE
+            if ($VsConfig.vs.PSObject.Properties.Name -notcontains $VsVersion) {
+                throw "Unsupported Visual Studio version override: $VsVersion"
+            }
+        }
+
+        if ($env:PHP_SKIP_VS_TOOLSET_CHECK -eq '1') {
+            return [PSCustomObject]@{
+                vs = $VsVersion
+                toolset = $null
+            }
+        }
+
         $selectedToolset = $null
         try {
             $selectedToolset = Get-VsVersionHelper -VsVersion $VsVersion -VsConfig $VsConfig

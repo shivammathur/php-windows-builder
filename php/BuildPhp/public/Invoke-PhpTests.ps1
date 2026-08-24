@@ -165,6 +165,7 @@ function Invoke-PhpTests {
         }
 
         $testExitCode = 0
+        $crashDumpGenerated = $false
         for ($iteration = 1; $iteration -le $RepeatCount; $iteration++) {
             $testResultFileName = if ($RepeatCount -eq 1) {
                 "test-$Arch-$Ts-$Opcache-$TestType.xml"
@@ -209,6 +210,7 @@ function Invoke-PhpTests {
             }
 
             if ($env:PHP_CRASH_DUMP_DIR -and (Get-ChildItem -Path $env:PHP_CRASH_DUMP_DIR -Filter '*.dmp' -File -ErrorAction SilentlyContinue)) {
+                $crashDumpGenerated = $true
                 Write-Host 'A PHP crash dump was generated; stopping repeated tests for debugger analysis.'
                 break
             }
@@ -220,8 +222,13 @@ function Invoke-PhpTests {
 
         Set-Location "$currentDirectory"
 
-        if($FailOnError -and $testExitCode -ne 0) {
-            throw "PHP tests failed for $Arch-$Ts-$Opcache-$TestType with exit code $testExitCode"
+        if($FailOnError) {
+            if ($crashDumpGenerated) {
+                throw "PHP crashed during $Arch-$Ts-$Opcache-$TestType tests; a full crash dump was generated."
+            }
+            if($testExitCode -ne 0) {
+                throw "PHP tests failed for $Arch-$Ts-$Opcache-$TestType with exit code $testExitCode"
+            }
         }
     }
     end {

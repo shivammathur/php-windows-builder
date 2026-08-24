@@ -1,5 +1,5 @@
 name: Test PHP Directories
-run-name: Test PHP ${{ inputs.php-version }} directories
+run-name: Test PHP ${{ inputs.php-version }} ${{ inputs.vs-version }} on ${{ inputs.runner }}
 on:
   workflow_dispatch:
     inputs:
@@ -56,6 +56,18 @@ on:
       source-ref:
         description: 'Optional branch, tag, or SHA in the php-src repository'
         required: false
+      runner:
+        type: choice
+        options: [auto, windows-2022, windows-2025-vs2026]
+        description: Windows runner override
+        required: false
+        default: auto
+      vs-version:
+        type: choice
+        options: [auto, vs17, vs18]
+        description: Visual Studio version used by the PHP build artifact
+        required: false
+        default: auto
 
 permissions:
   contents: read
@@ -109,8 +121,12 @@ jobs:
   test:
     needs: set-matrix
     name: ${{ inputs.php-version }} ${{ matrix.name }} ${{ inputs.arch }} ${{ inputs.ts }} ${{ inputs.opcache }}
-    runs-on: ${{ (contains(inputs.php-version, 'master') || contains(inputs.php-version, '8.6')) && 'windows-2025-vs2026' || 'windows-2022' }}
+    runs-on: ${{ inputs.runner != 'auto' && inputs.runner || ((contains(inputs.php-version, 'master') || contains(inputs.php-version, '8.6')) && 'windows-2025-vs2026' || 'windows-2022') }}
     timeout-minutes: 60
+    env:
+      PHP_VS_VERSION_OVERRIDE: ${{ inputs.vs-version != 'auto' && inputs.vs-version || '' }}
+      PHP_DEPS_VERSION_OVERRIDE: ${{ inputs.vs-version == 'vs17' && '8.5' || '' }}
+      PHP_SKIP_VS_TOOLSET_CHECK: '1'
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.set-matrix.outputs.test-matrix) }}
