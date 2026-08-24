@@ -41,8 +41,18 @@ function Get-TestsList {
                     continue
                 }
 
+                if (Test-Path -Path $path -PathType Leaf) {
+                    if ([System.IO.Path]::GetExtension($path) -ne '.phpt') {
+                        Write-Host "Skipping non-PHPT test file: $path"
+                        continue
+                    }
+                    $testsFound++
+                    $writer.WriteLine((Resolve-Path -Path $path).Path)
+                    continue
+                }
+
                 if (-not (Test-Path -Path $path -PathType Container)) {
-                    Write-Host "Skipping missing test directory: $path"
+                    Write-Host "Skipping missing test path: $path"
                     continue
                 }
 

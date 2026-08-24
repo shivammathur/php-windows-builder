@@ -20,6 +20,8 @@ function Invoke-PhpTests {
         Optional test directories to run instead of the configured test list.
     .PARAMETER FailOnError
         Fail when run-tests.php returns a non-zero exit code.
+    .PARAMETER RepeatCount
+        Number of times to repeat the selected tests.
     #>
     [OutputType()]
     param (
@@ -48,7 +50,10 @@ function Invoke-PhpTests {
         [Parameter(Mandatory = $false, Position=7, HelpMessage='Optional test directories')]
         [string[]] $TestDirectories = @(),
         [Parameter(Mandatory = $false, Position=8, HelpMessage='Fail on test errors')]
-        [switch] $FailOnError
+        [switch] $FailOnError,
+        [Parameter(Mandatory = $false, Position=9, HelpMessage='Number of times to repeat the selected tests')]
+        [ValidateRange(1, 10000)]
+        [int] $RepeatCount = 1
     )
     begin {
     }
@@ -87,13 +92,13 @@ function Invoke-PhpTests {
                                           -SourceRepository $SourceRepository `
                                           -SourceRef $SourceRef
         Remove-Item Env:LIBS_BUILD_RUNS -ErrorAction SilentlyContinue
+        Remove-Item Env:GITHUB_TOKEN -ErrorAction SilentlyContinue
 
         Set-PhpIniForTests -BuildDirectory $buildDirectory -Arch $Arch -Opcache $Opcache -TestType $TestType
 
         $Env:Path = "$buildDirectory\phpbin;$Env:Path"
         $Env:TEST_PHP_EXECUTABLE = "$buildDirectory\phpbin\php.exe"
         $Env:TEST_PHPDBG_EXECUTABLE = "$buildDirectory\phpbin\phpdbg.exe"
-        $Env:TEST_PHP_JUNIT = "$buildDirectory\test-$Arch-$Ts-$opcache-$TestType.xml"
         $Env:SKIP_IO_CAPTURE_TESTS = 1
         $Env:NO_INTERACTION = 1
         $Env:REPORT_EXIT_STATUS = 1
@@ -115,7 +120,6 @@ function Invoke-PhpTests {
 
         $testTimeout = if ($TestType -eq 'ext') { '300' } else { '120' }
 
-        $testResultFile = "$buildDirectory\test-$Arch-$Ts-$Opcache-$TestType.xml"
         $testLogFile = "$buildDirectory\test-$Arch-$Ts-$Opcache-$TestType.log"
 
         $params = @(
@@ -160,13 +164,54 @@ function Invoke-PhpTests {
             Remove-Item $testLogFile -Force
         }
 
-        & $buildDirectory\phpbin\php.exe @params 2>&1 | Tee-Object -FilePath $testLogFile | Out-Host
-        $testExitCode = $LASTEXITCODE
+        $testExitCode = 0
+        for ($iteration = 1; $iteration -le $RepeatCount; $iteration++) {
+            $testResultFileName = if ($RepeatCount -eq 1) {
+                "test-$Arch-$Ts-$Opcache-$TestType.xml"
+            } else {
+                "test-$Arch-$Ts-$Opcache-$TestType-$iteration.xml"
+            }
+            $testResultFile = Join-Path $buildDirectory $testResultFileName
+            $Env:TEST_PHP_JUNIT = $testResultFile
 
-        if(Test-Path $testResultFile) {
-            Copy-Item $testResultFile $currentDirectory -Force
-        } else {
-            Write-Warning "Test results file was not generated: $testResultFile"
+            if ($RepeatCount -gt 1) {
+                Write-Host "Running test iteration $iteration of $RepeatCount"
+            }
+
+            if ($env:PHP_CRASH_DEBUGGER -eq '1' -and $env:PHP_CDB_PATH) {
+                $debuggerParams = @(
+                    '-o',
+                    '-g',
+                    '-G',
+                    '-cf', $env:PHP_CDB_COMMAND_FILE,
+                    '-loga', $env:PHP_CDB_LOG,
+                    '-y', $env:PHP_CDB_SYMBOL_PATH,
+                    "$buildDirectory\phpbin\php.exe",
+                    $params
+                )
+                & $env:PHP_CDB_PATH @debuggerParams 2>&1 |
+                    Tee-Object -FilePath $testLogFile -Append |
+                    Out-Host
+            } else {
+                & $buildDirectory\phpbin\php.exe @params 2>&1 |
+                    Tee-Object -FilePath $testLogFile -Append |
+                    Out-Host
+            }
+            $iterationExitCode = $LASTEXITCODE
+            if ($iterationExitCode -ne 0) {
+                $testExitCode = $iterationExitCode
+            }
+
+            if(Test-Path $testResultFile) {
+                Copy-Item $testResultFile $currentDirectory -Force
+            } else {
+                Write-Warning "Test results file was not generated: $testResultFile"
+            }
+
+            if ($env:PHP_CRASH_DUMP_DIR -and (Get-ChildItem -Path $env:PHP_CRASH_DUMP_DIR -Filter '*.dmp' -File -ErrorAction SilentlyContinue)) {
+                Write-Host 'A PHP crash dump was generated; stopping repeated tests for debugger analysis.'
+                break
+            }
         }
 
         if(Test-Path $testLogFile) {

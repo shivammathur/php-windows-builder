@@ -7,8 +7,18 @@ on:
         description: 'PHP version to test'
         required: true
       test-directories:
-        description: 'Comma or newline-separated test directories'
+        description: 'Comma or newline-separated test files or directories'
         required: true
+      repeat-count:
+        type: number
+        description: 'Number of times to repeat each selected test set'
+        required: false
+        default: 1
+      combine-tests:
+        type: boolean
+        description: 'Run all selected paths together in each repetition'
+        required: false
+        default: false
       arch:
         type: choice
         options: [x64, x86]
@@ -72,13 +82,23 @@ jobs:
           }
 
           $include = @()
-          foreach ($directory in $directories) {
-            $name = ($directory -replace '[^A-Za-z0-9_.-]+', '-').Trim('-')
+          $combineTests = [System.Convert]::ToBoolean('${{ inputs.combine-tests }}')
+          $testSets = if ($combineTests) {
+            ,($directories -join '|')
+          } else {
+            $directories
+          }
+          foreach ($testSet in $testSets) {
+            $name = if ($combineTests) {
+              'combined'
+            } else {
+              ($testSet -replace '[^A-Za-z0-9_.-]+', '-').Trim('-')
+            }
             if ([string]::IsNullOrWhiteSpace($name)) {
               $name = 'tests'
             }
             $include += [PSCustomObject]@{
-              directory = $directory
+              directory = $testSet
               name = $name
             }
           }
@@ -133,6 +153,15 @@ jobs:
           path: ${{ steps.cache-key.outputs.cache-dir }}
           key: ${{ steps.cache-key.outputs.cache-key }}-${{ hashFiles('packages.txt') }}
 
+      - name: Enable full PHP crash dumps
+        shell: pwsh
+        run: |
+          $dumpDirectory = Join-Path $env:RUNNER_TEMP 'php-crash-dumps'
+          ./.github/scripts/Enable-PhpCrashDumps.ps1 `
+              -DumpDirectory $dumpDirectory `
+              -Arch '${{ inputs.arch }}' `
+              -Ts '${{ inputs.ts }}'
+
       - name: Run tests
         shell: pwsh
         env:
@@ -142,6 +171,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           Import-Module (Join-Path $(pwd).Path '\php\BuildPhp') -Force
+          $testPaths = '${{ matrix.directory }}' -split '\|'
           Invoke-PhpTests -PhpVersion '${{ inputs.php-version }}' `
                           -Arch '${{ inputs.arch }}' `
                           -Ts '${{ inputs.ts }}' `
@@ -149,8 +179,31 @@ jobs:
                           -TestType '${{ inputs.test-type }}' `
                           -SourceRepository '${{ inputs.source-repository }}' `
                           -SourceRef '${{ inputs.source-ref }}' `
-                          -TestDirectories '${{ matrix.directory }}' `
+                          -TestDirectories $testPaths `
+                          -RepeatCount ${{ inputs.repeat-count }} `
                           -FailOnError
+
+      - name: Collect PHP crash diagnostics
+        if: always()
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          ./.github/scripts/Collect-PhpCrashDiagnostics.ps1 `
+              -DumpDirectory $env:PHP_CRASH_DUMP_DIR `
+              -DiagnosticsDirectory (Join-Path $env:RUNNER_TEMP 'php-crash-diagnostics') `
+              -Arch '${{ inputs.arch }}' `
+              -Ts '${{ inputs.ts }}'
+
+      - name: Upload PHP crash diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        continue-on-error: true
+        with:
+          name: crash-diagnostics-${{ inputs.php-version }}-${{ matrix.name }}-${{ inputs.arch }}-${{ inputs.ts }}-${{ inputs.opcache }}
+          path: ${{ runner.temp }}\php-crash-diagnostics
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 14
 
       - name: Upload test results
         if: always()
@@ -159,6 +212,6 @@ jobs:
         with:
           name: test-results-${{ inputs.php-version }}-${{ matrix.name }}-${{ inputs.arch }}-${{ inputs.ts }}-${{ inputs.opcache }}
           path: |
-            test-${{ inputs.arch }}-${{ inputs.ts }}-${{ inputs.opcache }}-${{ inputs.test-type }}.xml
+            test-${{ inputs.arch }}-${{ inputs.ts }}-${{ inputs.opcache }}-${{ inputs.test-type }}*.xml
             test-${{ inputs.arch }}-${{ inputs.ts }}-${{ inputs.opcache }}-${{ inputs.test-type }}.log
           if-no-files-found: ignore
