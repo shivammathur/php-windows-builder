@@ -96,9 +96,11 @@ foreach ($debugPack in $debugPacks) {
 }
 
 $symbolPath = "$symbolDirectory;srv*$symbolCache*https://msdl.microsoft.com/download/symbols"
+$phpModule = if ($Ts -eq 'ts') { 'php8ts' } else { 'php8' }
+$sharedGlobalsCommands = "x $phpModule!*smm_shared_globals*; x $phpModule!*accel_shared_globals*; dq $phpModule!smm_shared_globals L1; dq poi($phpModule!smm_shared_globals) L20; dq $phpModule!accel_shared_globals L1; dq poi($phpModule!accel_shared_globals) L40; dt $phpModule!_zend_smm_shared_globals poi($phpModule!smm_shared_globals); dt $phpModule!_zend_accel_shared_globals poi($phpModule!accel_shared_globals)"
 @(
     '.lines -e',
-    "sxd -c2 `".dump /ma /u $cdbDumpFile; .lastevent; !analyze -v; .ecxr; r; ln @rip; u @rip-40 @rip+40; kv 100; dv /t /v; dps @rsp L100; x php8!*smm_shared_globals*; x php8!*accel_shared_globals*; dq php8!smm_shared_globals L1; dq poi(php8!smm_shared_globals) L20; dq php8!accel_shared_globals L1; dq poi(php8!accel_shared_globals) L40; dt php8!_zend_smm_shared_globals poi(php8!smm_shared_globals); !address @rcx; !address @rax; ~* kv 100; lmv; !peb; !address -summary; q`" av",
+    "sxd -c2 `".dump /ma /u $cdbDumpFile; .lastevent; !analyze -v; .ecxr; r; ln @rip; u @rip-40 @rip+40; kv 100; dv /t /v; dps @rsp L100; $sharedGlobalsCommands; !address @rcx; !address @rax; ~* kv 100; lmv; !peb; !address -summary; q`" av",
     'g'
 ) | Set-Content -Path $debuggerCommandFile -Encoding ascii
 
