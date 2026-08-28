@@ -56,7 +56,7 @@ Function Add-Extension {
                 $bat_content += ""
                 $bat_content += "call phpize 2>&1"
                 $bat_content += "call configure --with-php-build=`"..\deps`" $argumentString --with-mp=`"disable`" --with-prefix=$Prefix 2>&1"
-                $bat_content += "nmake /nologo 2>&1"
+                $bat_content += "nmake $($Config.nmake_flags) 2>&1"
                 $bat_content += "exit %errorlevel%"
                 Set-Content -Encoding "ASCII" -Path $Extension-task.bat -Value $bat_content
                 $builder = "$currentDirectory\php-sdk\phpsdk-starter.bat"

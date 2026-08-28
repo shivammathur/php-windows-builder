@@ -1,0 +1,8 @@
+{
+  "default": {
+    "nmake_flags": "/nologo"
+  },
+  "grpc": {
+    "nmake_flags": "/nologo /S"
+  }
+}

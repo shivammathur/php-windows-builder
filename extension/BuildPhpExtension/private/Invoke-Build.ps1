@@ -24,7 +24,8 @@ Function Invoke-Build {
             if ($Config.debug_symbols) {
                 $options += " --enable-debug-pack"
             }
-            Set-Content -Path task.bat -Value (Get-Content -Path $task -Raw).Replace("OPTIONS", $options)
+            $taskContent = (Get-Content -Path $task -Raw).Replace("OPTIONS", $options)
+            Set-Content -Path task.bat -Value $taskContent.Replace("NMAKE_FLAGS", $Config.nmake_flags)
 
             $ref = $Config.ref
             if($env:ARTIFACT_NAMING_SCHEME -eq 'pecl') {

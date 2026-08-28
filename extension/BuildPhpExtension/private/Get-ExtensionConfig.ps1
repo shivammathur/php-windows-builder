@@ -73,6 +73,12 @@ Function Get-ExtensionConfig {
             if($Extension -eq "http") {
                 $packageName = "pecl_http"
             }
+            $extensionBuildConfig = Get-Content "$PSScriptRoot\..\config\extensions.config.json" -Raw | ConvertFrom-Json
+            $buildSettings = $extensionBuildConfig.default
+            $extensionBuildConfigProperty = $extensionBuildConfig.PSObject.Properties[$Extension]
+            if ($null -ne $extensionBuildConfigProperty) {
+                $buildSettings = $extensionBuildConfigProperty.Value
+            }
             $config = [PSCustomObject]@{
                 name = $Extension
                 package_name = $packageName
@@ -90,6 +96,7 @@ Function Get-ExtensionConfig {
                 extensions = @()
                 docs = @()
                 build_directory = ""
+                nmake_flags = $buildSettings.nmake_flags
             }
             $composerJson = $null
             if((-not(Test-Path composer.json)) -and (Test-Path $PSScriptRoot\..\config\stubs\$packageName.composer.json)) {
