@@ -1,0 +1,84 @@
+name: PHP ARM64 PR test
+
+on:
+  push:
+    branches:
+      - test/php-pr-23227-windows-arm64
+  workflow_dispatch:
+    inputs:
+      php-ref:
+        description: php-src ref to build
+        required: true
+        default: refs/pull/23227/head
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-11-arm
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout builder
+        uses: actions/checkout@v6
+
+      - name: Checkout php-src
+        uses: actions/checkout@v6
+        with:
+          repository: php/php-src
+          ref: ${{ inputs.php-ref || 'refs/pull/23227/head' }}
+          path: php-src
+          fetch-depth: 1
+
+      - name: Checkout PHP SDK tools
+        uses: actions/checkout@v6
+        with:
+          repository: php/php-sdk-binary-tools
+          path: php-sdk
+          fetch-depth: 1
+
+      - name: Disable unsupported Zend SIMD shim
+        shell: bash
+        run: git -C php-src apply ../.github/patches/php-arm64-disable-zend-simd.patch
+
+      - name: Build native ARM64 ZTS PHP
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%I in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.ARM64 -property installationPath`) do set "VS_INSTALL=%%I"
+          if not defined VS_INSTALL exit /b 1
+          call "%VS_INSTALL%\VC\Auxiliary\Build\vcvarsall.bat" arm64
+          if errorlevel 1 exit /b 1
+
+          set "PATH=%GITHUB_WORKSPACE%\php-sdk\bin;%GITHUB_WORKSPACE%\php-sdk\msys2\usr\bin;%PATH%"
+          mkdir "%GITHUB_WORKSPACE%\deps\include"
+          mkdir "%GITHUB_WORKSPACE%\deps\lib"
+          mkdir "%GITHUB_WORKSPACE%\obj"
+          cd /d "%GITHUB_WORKSPACE%\php-src"
+
+          call buildconf.bat --force
+          if errorlevel 1 exit /b 1
+
+          set "CFLAGS=/W3 /WX /wd4018 /wd4146 /wd4244 /wd4267"
+          call configure.bat --disable-all --enable-cli --enable-zts --without-analyzer --disable-test-ini --enable-object-out-dir=%GITHUB_WORKSPACE%\obj --with-php-build=%GITHUB_WORKSPACE%\deps
+          if errorlevel 1 exit /b 1
+
+          nmake /NOLOGO php.exe
+          if errorlevel 1 exit /b 1
+
+          set "PHP_EXE=%GITHUB_WORKSPACE%\obj\Release_TS\php.exe"
+          if not exist "%PHP_EXE%" exit /b 1
+          dumpbin /headers "%PHP_EXE%" | findstr /c:"machine (ARM64)"
+          if errorlevel 1 exit /b 1
+          "%PHP_EXE%" -n -r "echo PHP_ZTS ? 'ARM64 ZTS OK' . PHP_EOL : 'NTS' . PHP_EOL;"
+
+      - name: Upload ARM64 build
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: php-arm64-zts
+          path: |
+            obj/**/php.exe
+            obj/**/php*.dll
+            php-src/config.log
+          if-no-files-found: warn

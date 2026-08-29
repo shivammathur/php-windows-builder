@@ -1,0 +1,13 @@
+diff --git a/Zend/zend_simd.h b/Zend/zend_simd.h
+index 507479fd57e..feaf2088372 100644
+--- a/Zend/zend_simd.h
++++ b/Zend/zend_simd.h
+@@ -42,7 +42,7 @@
+ #define XSSE2
+ 
+ 
+-#elif defined(__aarch64__) || defined(_M_ARM64)
++#elif defined(__aarch64__)
+ #include <arm_neon.h>
+ #define XSSE2
+ 
