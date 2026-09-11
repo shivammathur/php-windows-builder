@@ -21,6 +21,7 @@ commonName = localhost
 '@ | Set-Content $config
 $env:OPENSSL_CONF = $config
 $env:MIBDIRS = Join-Path $root 'mibs'
+$env:MIBS = ''
 New-Item -ItemType Directory -Path $env:MIBDIRS -Force | Out-Null
 $arguments = @('-n', '-d', "extension_dir=$root\ext")
 foreach ($extension in @('openssl', 'curl', 'ldap', 'pgsql', 'pdo_pgsql', 'gd', 'snmp')) {
