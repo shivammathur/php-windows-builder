@@ -108,6 +108,7 @@ jobs:
     if: ${{ !cancelled() && (needs.artifacts.result == 'success' || (inputs.existing-source-run != '' && inputs.test-directories != '')) }}
     needs: [resolve-runner, artifacts]
     strategy:
+      fail-fast: false
       matrix:
         arch: [x64, x86]
         ts: [nts, ts]
@@ -180,6 +181,7 @@ jobs:
           }
 
       - name: Upload artifacts
+        if: always()
         uses: actions/upload-artifact@v7
         continue-on-error: true
         with:
