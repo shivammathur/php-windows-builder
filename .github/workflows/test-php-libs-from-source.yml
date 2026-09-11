@@ -163,6 +163,9 @@ jobs:
                           -TestType ${{matrix.test-type}} `
                           -SourceRepository '${{ inputs.php-src-repository }}' `
                           -SourceRef '${{ inputs.php-src-ref }}'
+          if ('${{ inputs.php-src-ref }}' -eq 'master' -and '${{ matrix.test-type }}' -eq 'php') {
+              ./tests/security-updates/cgi.ps1
+          }
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
@@ -209,6 +212,7 @@ jobs:
     if: inputs.php-src-ref == 'master'
     needs: [resolve-runner, artifacts]
     strategy:
+      fail-fast: false
       matrix:
         arch: [x64, x86]
     runs-on: ${{ needs.resolve-runner.outputs.runner }}
