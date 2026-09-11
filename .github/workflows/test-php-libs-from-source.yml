@@ -12,6 +12,10 @@ on:
       libs-build-runs:
         description: 'Comma-separated list of GitHub Actions run IDs from winlibs/winlib-builder'
         required: false
+      existing-source-run:
+        description: 'Recheck security smoke tests using artifacts from an existing source build run'
+        required: false
+        default: ''
       sbom:
         type: choice
         options: ['true', 'false']
@@ -46,6 +50,7 @@ jobs:
           echo "runner=$runner" >> "$GITHUB_OUTPUT"
 
   php:
+    if: inputs.existing-source-run == ''
     needs: resolve-runner
     strategy:
       matrix:
@@ -220,3 +225,36 @@ jobs:
           ./tests/security-updates/libheif.ps1
           -BuildRuns '${{ inputs.libs-build-runs }}'
           -Arch '${{ matrix.arch }}'
+
+  security-recheck:
+    if: inputs.existing-source-run != ''
+    needs: resolve-runner
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, x86]
+        ts: [nts, ts]
+    runs-on: ${{ needs.resolve-runner.outputs.runner }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Download source build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: artifacts
+          path: artifacts
+          run-id: ${{ inputs.existing-source-run }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Smoke test PHP builds
+        shell: pwsh
+        run: |
+          Import-Module (Join-Path $(pwd).Path '\php\BuildPhp') -Force
+          Invoke-PhpSmokeTests -ArtifactsDirectory (Join-Path $(pwd).Path 'artifacts') `
+                               -Arch ${{matrix.arch}} `
+                               -Ts ${{matrix.ts}}
+      - name: Validate updated security dependencies
+        shell: pwsh
+        run: >-
+          ./tests/security-updates/php.ps1
+          -ArtifactsDirectory artifacts
+          -Arch '${{ matrix.arch }}'
+          -Ts '${{ matrix.ts }}'

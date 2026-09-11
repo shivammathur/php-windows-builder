@@ -5,6 +5,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $matches = @(Get-ChildItem $ArtifactsDirectory -Filter "php-*-$Arch.zip" | Where-Object {
+    $_.Name -notmatch '^php-(devel-pack|debug-pack|test-pack)-' -and
     $_.Name -match "^php-.+?(-nts)?-Win32-v[sc]\d+-$Arch\.zip$" -and
     (($_.Name -match '-nts-') -eq ($Ts -eq 'nts'))
 })
