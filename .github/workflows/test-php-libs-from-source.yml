@@ -16,6 +16,10 @@ on:
         description: 'Recheck security smoke tests using artifacts from an existing source build run'
         required: false
         default: ''
+      test-directories:
+        description: 'Optional comma-separated extension test directories for a focused validation'
+        required: false
+        default: ''
       sbom:
         type: choice
         options: ['true', 'false']
@@ -107,7 +111,7 @@ jobs:
         arch: [x64, x86]
         ts: [nts, ts]
         opcache: [opcache, nocache]
-        test-type: [php, ext]
+        test-type: ${{ inputs.test-directories != '' && fromJSON('["ext"]') || fromJSON('["php", "ext"]') }}
     runs-on: ${{ needs.resolve-runner.outputs.runner }}
     steps:
       - name: Checkout
@@ -148,7 +152,7 @@ jobs:
 
       - name: Test PHP
         shell: pwsh
-        continue-on-error: true
+        continue-on-error: ${{ inputs.test-directories == '' }}
         env:
           DEPS_DIR: ${{ steps.cache-key.outputs.cache-dir }}
           DEPS_CACHE_HIT: ${{ steps.cache-deps.outputs.cache-hit }}
@@ -156,13 +160,18 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           Import-Module (Join-Path $(pwd).Path '\php\BuildPhp') -Force
+          $testOptions = @{}
+          if ('${{ inputs.test-directories }}' -ne '') {
+            $testOptions.TestDirectories = @('${{ inputs.test-directories }}' -split ',' | ForEach-Object { $_.Trim() })
+            $testOptions.FailOnError = $true
+          }
           Invoke-PhpTests -PhpVersion ${{ steps.cache-key.outputs.php-version }} `
                           -Arch ${{matrix.arch}} `
                           -Ts ${{matrix.ts}} `
                           -Opcache ${{matrix.opcache}} `
                           -TestType ${{matrix.test-type}} `
                           -SourceRepository '${{ inputs.php-src-repository }}' `
-                          -SourceRef '${{ inputs.php-src-ref }}'
+                          -SourceRef '${{ inputs.php-src-ref }}' @testOptions
           if ('${{ inputs.php-src-ref }}' -eq 'master' -and '${{ matrix.test-type }}' -eq 'php') {
               ./tests/security-updates/cgi.ps1
           }
