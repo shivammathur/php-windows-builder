@@ -105,6 +105,7 @@ jobs:
           delete-merged: true
 
   tests:
+    if: ${{ !cancelled() && (needs.artifacts.result == 'success' || (inputs.existing-source-run != '' && inputs.test-directories != '')) }}
     needs: [resolve-runner, artifacts]
     strategy:
       matrix:
@@ -122,6 +123,8 @@ jobs:
         id: artifacts
         with:
           name: artifacts
+          run-id: ${{ inputs.existing-source-run || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Get Cache Key
         id: cache-key

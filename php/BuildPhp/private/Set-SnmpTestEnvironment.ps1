@@ -17,6 +17,7 @@ function Set-SnmpTestEnvironment {
         }
 
         $env:MIBDIRS = Join-Path $env:DEPS_DIR 'share\mibs'
+        $env:SNMP_MIBDIR = $env:MIBDIRS
 
         $confPath = Join-Path $TestsDirectoryPath 'ext\snmp\tests\snmpd.conf'
         if (-not (Test-Path -LiteralPath $confPath)) {
@@ -25,6 +26,17 @@ function Set-SnmpTestEnvironment {
 
         $forwardTestsRoot = ($TestsDirectoryPath -replace '\\','/')
         $bigTestJs = "$forwardTestsRoot/ext/snmp/tests/bigtest.js"
+        # Windows equivalent of php-src's POSIX bigtest fixture: the same
+        # 18 octal-escaped bytes repeated 32 times, without a trailing newline.
+        $bigTestScript = @'
+var bytes = [3, 2, 4, 9, 18, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23];
+var output = "";
+for (var i = 0; i < 32; i++) {
+    for (var j = 0; j < bytes.length; j++) output += String.fromCharCode(bytes[j]);
+}
+WScript.StdOut.Write(output);
+'@
+        [System.IO.File]::WriteAllText($bigTestJs, $bigTestScript, [System.Text.UTF8Encoding]::new($false))
 
         $content = Get-Content -LiteralPath $confPath -Raw -Encoding UTF8
         $newLine = "exec HexTest cscript.exe /nologo $bigTestJs"
@@ -49,9 +61,12 @@ function Set-SnmpTestEnvironment {
             }
         }
         if(-not(Test-Path snmpd_running)) {
-            Start-Process -FilePath $snmpd -ArgumentList @('-C','-c', $confPath, '-Ln') -WindowStyle Hidden
-            Set-Content -Path snmpd_running -Value "running" -Encoding ASCII
+            $agent = Start-Process -FilePath $snmpd -ArgumentList @('-C','-c', $confPath, '-Ln') -WindowStyle Hidden -PassThru
             Start-Sleep -Seconds 2
+            if ($agent.HasExited) {
+                throw "The SNMP test agent exited during startup with code $($agent.ExitCode)."
+            }
+            Set-Content -Path snmpd_running -Value "running" -Encoding ASCII
         }
     }
 }
