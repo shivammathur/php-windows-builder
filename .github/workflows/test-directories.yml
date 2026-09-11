@@ -151,6 +151,9 @@ jobs:
                           -SourceRef '${{ inputs.source-ref }}' `
                           -TestDirectories '${{ matrix.directory }}' `
                           -FailOnError
+          if ('${{ matrix.directory }}' -eq 'ext/soap') {
+            ./tests/security-updates/soap.ps1
+          }
 
       - name: Upload test results
         if: always()
@@ -161,4 +164,5 @@ jobs:
           path: |
             test-${{ inputs.arch }}-${{ inputs.ts }}-${{ inputs.opcache }}-${{ inputs.test-type }}.xml
             test-${{ inputs.arch }}-${{ inputs.ts }}-${{ inputs.opcache }}-${{ inputs.test-type }}.log
+            soap-recheck-*.xml
           if-no-files-found: ignore
