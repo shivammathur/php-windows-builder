@@ -1,0 +1,58 @@
+name: Check PHP SBOM metadata daily
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: sbom-daily
+  cancel-in-progress: false
+
+jobs:
+  check:
+    if: github.repository == 'php/php-windows-builder'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php-ref: [PHP-8.2, PHP-8.3, PHP-8.4, PHP-8.5, master]
+    steps:
+      - name: Checkout builder
+        uses: actions/checkout@v6
+
+      - name: Checkout PHP
+        uses: actions/checkout@v6
+        with:
+          repository: php/php-src
+          ref: ${{ matrix.php-ref }}
+          path: php-src
+
+      - name: Update changed metadata
+        shell: pwsh
+        env:
+          PHP_REF: ${{ matrix.php-ref }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          Import-Module (Join-Path $PWD 'php/BuildPhp') -Force
+          Push-Location php-src
+          $versions = @(([version](Get-SourcePhpVersion)).ToString(2))
+          $sourceRef = git rev-parse HEAD
+          if($LASTEXITCODE -ne 0) { throw 'Could not determine PHP source commit' }
+          Pop-Location
+          if($env:PHP_REF -eq 'master') { $versions += 'master' }
+          foreach($version in $versions) {
+              $file = "php-$version.json"
+              New-PhpSbomMetadata -PhpVersion $version -SourceDirectory 'php-src' -OutputPath $file
+              $generated = Get-Content $file -Raw | ConvertFrom-Json | ConvertTo-Json -Depth 10 -Compress
+              $published = Invoke-RestMethod "https://downloads.php.net/~windows/php-sdk/sbom/$file" -TimeoutSec 60 | ConvertTo-Json -Depth 10 -Compress
+              if($generated -cne $published) {
+                  $phpRef = if($version -eq 'master') { 'master' } else { $sourceRef }
+                  gh workflow run sbom.yml --ref $env:GITHUB_REF_NAME --raw-field "php-ref=$phpRef" --raw-field upload=true
+                  if($LASTEXITCODE -ne 0) { throw "Could not dispatch SBOM update for $phpRef" }
+              }
+          }
