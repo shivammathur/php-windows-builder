@@ -90,18 +90,19 @@ function Get-Extension {
             }
         }
 
-        $patches = $False
+        $extensionPatched = $False
+        $phpPatched = $False
         if($null -ne $extension) {
             if(Test-Path -PATH "$PSScriptRoot\..\patches\${extension}.ps1") {
                 if((Get-Content "$PSScriptRoot\..\patches\${extension}.ps1" -Raw).Contains('config.w32')) {
                     Add-Patches "${extension}.ps1"
-                    $patches = $True
+                    $extensionPatched = $True
                 }
             }
             if(Test-Path -PATH "$PSScriptRoot\..\patches\php\${PhpVersion}.ps1") {
                 if((Get-Content "$PSScriptRoot\..\patches\php\${PhpVersion}.ps1" -Raw).Contains('config.w32')) {
                     Add-Patches "php\${PhpVersion}.ps1"
-                    $patches = $True
+                    $phpPatched = $True
                 }
             }
         }
@@ -133,8 +134,10 @@ function Get-Extension {
         }
         $name = Get-ExtensionName
 
-        if(!$patches) {
+        if(!$extensionPatched) {
             Add-Patches "${name}.ps1"
+        }
+        if(!$phpPatched) {
             Add-Patches "php\${PhpVersion}.ps1"
         }
         if(-not($LocalSrc)) {
