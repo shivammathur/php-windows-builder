@@ -399,6 +399,16 @@
       ],
       "overrides": {}
     },
+    "8.7": {
+      "exclude": [
+        "libxmlrpc",
+        "libzip",
+        "Oniguruma",
+        "pcrelib",
+        "SQLite"
+      ],
+      "overrides": {}
+    },
     "master": {
       "exclude": [
         "libxmlrpc",

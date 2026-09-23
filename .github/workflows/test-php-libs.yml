@@ -22,7 +22,7 @@ jobs:
       matrix:
         arch: [x64, x86]
         ts: [nts, ts]
-    runs-on: ${{ (contains(inputs.php-version, 'master') || contains(inputs.php-version, '8.6')) && 'windows-2025-vs2026' || 'windows-2022' }}
+    runs-on: ${{ (contains(inputs.php-version, 'master') || contains(inputs.php-version, '8.6') || contains(inputs.php-version, '8.7')) && 'windows-2025-vs2026' || 'windows-2022' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -57,7 +57,7 @@ jobs:
         ts: [nts, ts]
         opcache: [opcache, nocache]
         test-type: [php, ext]
-    runs-on: ${{ (contains(inputs.php-version, 'master') || contains(inputs.php-version, '8.6')) && 'windows-2025-vs2026' || 'windows-2022' }}
+    runs-on: ${{ (contains(inputs.php-version, 'master') || contains(inputs.php-version, '8.6') || contains(inputs.php-version, '8.7')) && 'windows-2025-vs2026' || 'windows-2022' }}
     needs: artifacts
     steps:
       - name: Checkout
@@ -114,7 +114,7 @@ jobs:
       matrix:
         arch: [x64, x86]
         ts: [nts, ts]
-    runs-on: ${{ (contains(inputs.php-version, 'master') || contains(inputs.php-version, '8.6')) && 'windows-2025-vs2026' || 'windows-2022' }}
+    runs-on: ${{ (contains(inputs.php-version, 'master') || contains(inputs.php-version, '8.6') || contains(inputs.php-version, '8.7')) && 'windows-2025-vs2026' || 'windows-2022' }}
     needs: [artifacts]
     steps:
       - name: Checkout
