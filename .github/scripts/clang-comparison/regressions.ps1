@@ -5,6 +5,17 @@ $out = New-Item "$root/regressions" -ItemType Directory -Force
 foreach ($variant in @('msvc','clang')) {
     $runtime = Expand-Runtime $variant
     $ini = Write-TestIni $runtime $Mode
+    # This generated helper is absent from a source checkout and is needed by
+    # proc_open_cmd.phpt. Test the helper shipped by each compiler's test pack.
+    $testPack = @(Get-ChildItem "$root/input/$variant/php-test-pack-*.zip")
+    if ($testPack.Count -ne 1) { throw "Expected one test pack for $variant" }
+    $archive = [IO.Compression.ZipFile]::OpenRead($testPack[0].FullName)
+    try {
+        $helper = 'ext/standard/tests/helpers/bad_cmd.exe'
+        $entry = $archive.GetEntry($helper)
+        if (-not $entry) { throw "Test pack is missing $helper" }
+        [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, "$root/source/$helper", $true)
+    } finally { $archive.Dispose() }
     $env:TEST_PHP_EXECUTABLE = "$runtime/php.exe"
     $env:TEST_PHPDBG_EXECUTABLE = "$runtime/phpdbg.exe"
     $env:TEST_PHP_CGI_EXECUTABLE = "$runtime/php-cgi.exe"

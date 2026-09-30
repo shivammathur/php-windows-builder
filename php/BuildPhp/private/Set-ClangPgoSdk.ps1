@@ -62,4 +62,11 @@ if (getenv("LLVM_PROFILE_FILE")) {
     if (-not $case.Contains($needle)) { throw 'Unexpected SDK training status implementation' }
     $case = $case.Replace($needle, $needle + ' if (getenv("LLVM_PROFILE_FILE")) { throw new \SDK\Exception("Failed HTTP responses during LLVM PGO training."); }')
     Set-Content $casePath $case -Encoding utf8NoBOM
+
+    $initPath = Join-Path $SdkDirectory 'pgo/cases/pgo01org/TrainingCaseHandler.php'
+    $init = Get-Content $initPath -Raw
+    $needle = '$out = file_get_contents("http://$http_host:$http_port/init.php");'
+    if (-not $init.Contains($needle)) { throw 'Unexpected SDK training initialization' }
+    $init = $init.Replace($needle, $needle + ' if (getenv("LLVM_PROFILE_FILE") && $out === false) { throw new \SDK\Exception("LLVM PGO initialization HTTP request failed."); }')
+    Set-Content $initPath $init -Encoding utf8NoBOM
 }

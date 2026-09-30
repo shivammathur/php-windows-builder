@@ -10,7 +10,11 @@ on:
       php-src-ref:
         description: Identical PHP source for both compilers
         required: true
-        default: 5228e4b5d13f42d22ce43b0392d79e428c60d485
+        default: e1ccbc09bc873174734c535012c95b696bf04f3b
+      diagnose-cfg:
+        description: Also capture the Clang x64 Control Flow Guard failure separately
+        type: boolean
+        default: false
       build-run:
         description: Reuse the eight build artifacts from a completed validation run
         required: false
@@ -32,6 +36,37 @@ permissions:
   contents: read
   actions: read
 jobs:
+  diagnose-cfg:
+    if: ${{ inputs.diagnose-cfg }}
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: harness
+      - shell: pwsh
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v6
+        with:
+          repository: shivammathur/php-src
+          ref: 5228e4b5d13f42d22ce43b0392d79e428c60d485
+          path: source
+      - uses: actions/checkout@v6
+        with:
+          path: builder
+      - name: Reproduce CFG failure with crash diagnostics
+        continue-on-error: true
+        shell: pwsh
+        env:
+          SBOM: 'true'
+          GITHUB_TOKEN: ${{ github.token }}
+          PHP_BUILD_PROVIDER: The PHP Group
+        run: ./harness/.github/scripts/clang-comparison/build.ps1 -Variant clang -Arch x64 -Ts nts
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: cfg-diagnostics
+          path: results/
   build:
     if: ${{ inputs.build-run == '' }}
     strategy:
