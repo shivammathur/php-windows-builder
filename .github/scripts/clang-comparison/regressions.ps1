@@ -5,6 +5,9 @@ $root = $env:GITHUB_WORKSPACE
 $out = New-Item "$root/regressions" -ItemType Directory -Force
 foreach ($variant in @('msvc','clang')) {
     $runtime = Expand-Runtime $variant
+    # Match php-src CI's SSL configuration setup for both architectures.
+    $env:OPENSSL_CONF = Join-Path $runtime 'extras/ssl/openssl.cnf'
+    $env:OPENSSL_MODULES = Join-Path $runtime 'extras/ssl'
     if ($variant -eq 'msvc' -and ($tests -contains 'ext' -or $tests -contains 'ext/pdo_firebird/tests' -or $tests -contains 'ext/snmp/tests')) {
         . "$PSScriptRoot/prepare-services.ps1" -Runtime $runtime
     }
