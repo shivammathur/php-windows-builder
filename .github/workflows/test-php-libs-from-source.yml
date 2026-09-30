@@ -64,7 +64,12 @@ jobs:
           github-token: ${{ github.token }}
       - name: Trace the failure and check CFG causality
         shell: pwsh
-        run: ./.github/scripts/clang-comparison/diagnose-cfg.ps1 -Kind '${{ matrix.label }}'
+        run: |
+          if ('${{ matrix.label }}' -eq 'x64-profile') {
+            ./.github/scripts/clang-comparison/probe-profile-modules.ps1
+          } else {
+            ./.github/scripts/clang-comparison/diagnose-cfg.ps1 -Kind '${{ matrix.label }}'
+          }
       - uses: actions/upload-artifact@v7
         if: always()
         with:
