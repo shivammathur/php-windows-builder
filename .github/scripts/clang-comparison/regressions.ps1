@@ -5,7 +5,7 @@ $root = $env:GITHUB_WORKSPACE
 $out = New-Item "$root/regressions" -ItemType Directory -Force
 foreach ($variant in @('msvc','clang')) {
     $runtime = Expand-Runtime $variant
-    if ($variant -eq 'msvc' -and ($tests -contains 'ext/pdo_firebird/tests' -or $tests -contains 'ext/snmp/tests')) {
+    if ($variant -eq 'msvc' -and ($tests -contains 'ext' -or $tests -contains 'ext/pdo_firebird/tests' -or $tests -contains 'ext/snmp/tests')) {
         . "$PSScriptRoot/prepare-services.ps1" -Runtime $runtime
     }
     $ini = Write-TestIni $runtime $Mode
@@ -36,7 +36,7 @@ foreach ($variant in @('msvc','clang')) {
     $env:REPORT_EXIT_STATUS = '1'
     $env:SKIP_IO_CAPTURE_TESTS = '1'
     Set-Location "$root/source"
-    if ($tests -contains 'ext/com_dotnet/tests') {
+    if ($tests -contains 'ext' -or $tests -contains 'ext/com_dotnet/tests') {
         & "$PSScriptRoot/prepare-comtest.ps1" -Variant $variant
     }
     & $env:TEST_PHP_EXECUTABLE -n -c $controllerIni run-tests.php -p $env:TEST_PHP_EXECUTABLE -n -c $ini -q --offline --no-progress --show-diff --set-timeout 90 -j4 -g FAIL,BORK,WARN,LEAK @tests 2>&1 | Tee-Object "$out/$variant.log"
