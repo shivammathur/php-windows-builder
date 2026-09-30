@@ -48,11 +48,6 @@ function Invoke-PhpBuild {
 
             Add-BuildRequirements -PhpVersion $PhpVersion -Arch $Arch -FetchSrc:$fetchSrc
 
-            if ($VsConfig.vs -eq 'vs18') {
-                Add-ClangProfileRuntime -Arch $Arch
-                Set-ClangPgoSdk -SdkDirectory (Join-Path $buildDirectory 'php-sdk')
-            }
-
             $configDirectory = Join-Path $PSScriptRoot "..\config\$($VsConfig.vs)\$Arch"
 
             if($fetchSrc) {
@@ -72,7 +67,20 @@ function Invoke-PhpBuild {
 
             Set-Location "$buildPath"
             New-Item (Join-Path $buildParent 'obj') -ItemType "directory" -Force > $null 2>&1
-            Copy-Item -Path $configBatch -Destination (Join-Path $buildPath "config.$Ts.bat") -Force
+            $buildConfig = Join-Path $buildPath "config.$Ts.bat"
+            Copy-Item -Path $configBatch -Destination $buildConfig -Force
+            if ($VsConfig.vs -eq 'vs18') {
+                # PHP-8.6 has Clang compilation support but still uses MSVC's
+                # PGO implementation. Keep MSVC until LLVM PGO is backported.
+                $sourceConfig = Get-Content (Join-Path $buildPath 'win32/build/config.w32') -Raw
+                if ($sourceConfig.Contains('-fprofile-generate')) {
+                    Add-ClangProfileRuntime -Arch $Arch
+                    Set-ClangPgoSdk -SdkDirectory (Join-Path $buildDirectory 'php-sdk')
+                } else {
+                    $config = Get-Content $buildConfig -Raw
+                    Set-Content $buildConfig $config.Replace(' "--with-toolset=clang"', '') -Encoding ascii -NoNewline
+                }
+            }
             Add-PhpDeps -PhpVersion $PhpVersion -VsVersion $VsConfig.vs -Arch $Arch -Destination $depsDirectory
 
             $sbomMetadata = Get-PhpSbomMetadata -Sbom $env:SBOM `
