@@ -1,0 +1,34 @@
+name: Diagnose Clang CFG runtime
+on:
+  workflow_dispatch:
+    inputs:
+      artifact-run:
+        description: Run containing cfg-diagnostics
+        required: true
+        default: '36696694020'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  diagnose:
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+      - uses: actions/download-artifact@v8
+        with:
+          name: cfg-diagnostics
+          path: input
+          run-id: ${{ inputs.artifact-run }}
+          github-token: ${{ github.token }}
+      - name: Trace the failure and check CFG causality
+        shell: pwsh
+        run: ./.github/scripts/clang-comparison/diagnose-cfg.ps1
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: cfg-runtime-analysis
+          path: diagnostics/
