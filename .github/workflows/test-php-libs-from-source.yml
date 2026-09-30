@@ -75,6 +75,8 @@ jobs:
             ./.github/scripts/clang-comparison/probe-profile-modules.ps1
           } elseif ('${{ matrix.label }}'.EndsWith('-manifest')) {
             ./.github/scripts/clang-comparison/diagnose-manifest.ps1
+          } elseif ('${{ matrix.label }}'.EndsWith('-intl')) {
+            ./.github/scripts/clang-comparison/diagnose-intl.ps1
           } else {
             ./.github/scripts/clang-comparison/diagnose-cfg.ps1 -Kind '${{ matrix.label }}'
           }
