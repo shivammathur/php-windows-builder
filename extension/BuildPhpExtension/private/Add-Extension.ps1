@@ -52,7 +52,7 @@ Function Add-Extension {
                         $argumentString += " $argument"
                     }
                 }
-                if (Test-ClangToolset -PhpVersion $Config.php_version) {
+                if (Test-ClangToolset -PhpBinary "$currentDirectory\php-bin\php.exe") {
                     $argumentString += " --with-toolset=clang"
                 }
                 $bat_content = @()

@@ -62,6 +62,9 @@ function Add-BuildRequirements {
         $buildDetails = Get-PhpBuildDetails -Config $Config
         $prefix = Get-PhpBuild -Config $config -BuildDetails $buildDetails
         Get-PhpDevelBuild -Config $config -BuildDetails $buildDetails
+        if ((Test-ClangToolset -PhpBinary (Join-Path $prefix 'php.exe')) -and $config.options -notmatch '--with-toolset=') {
+            $config.options += ' --with-toolset=clang'
+        }
         Add-Dependencies -Config $config -Prefix $prefix
         return $config
     }

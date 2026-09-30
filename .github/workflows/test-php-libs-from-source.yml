@@ -6,11 +6,11 @@ on:
       php-src-repository:
         description: PHP source repository
         required: true
-        default: php/php-src
+        default: shivammathur/php-src
       php-src-ref:
         description: Identical PHP source for both compilers
         required: true
-        default: a8e7901b8dfcfd2fe7c89e06a8790e9b5a7e2244
+        default: 749b2eb6375
       libs-build-runs:
         description: Optional dependency builds
         required: false

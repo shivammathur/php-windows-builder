@@ -3,9 +3,15 @@ param([string]$Arch, [string]$Ts)
 $root = $env:GITHUB_WORKSPACE
 $out = New-Item "$root/comparison" -ItemType Directory -Force
 $runtime = @{}
+Import-Module "$root/php/BuildPhp" -Force
+. "$root/extension/BuildPhpExtension/private/Test-ClangToolset.ps1"
+$vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+$vs = & $vswhere -latest -products '*' -property installationPath
+$dumpbin = (Get-ChildItem "$vs/VC/Tools/MSVC/*/bin/Hostx64/x64/dumpbin.exe" | Sort-Object FullName -Descending | Select-Object -First 1).FullName
 $metadata = [ordered]@{arch=$Arch; ts=$Ts; image=$env:ImageVersion; cpu=(Get-CimInstance Win32_Processor | Select-Object Name,NumberOfCores,NumberOfLogicalProcessors); os=(Get-CimInstance Win32_OperatingSystem | Select-Object Caption,Version); variants=@{}}
 foreach ($variant in @('msvc','clang')) {
     $runtime[$variant] = Expand-Runtime $variant
+    Invoke-PhpSmokeTests -ArtifactsDirectory "$root/input/$variant" -Arch $Arch -Ts $Ts 2>&1 | Tee-Object "$out/$variant-smoke.log"
     $metadata.variants[$variant] = Get-Content "$root/input/$variant/metadata.json" -Raw | ConvertFrom-Json
     foreach ($zip in Get-ChildItem "$root/input/$variant/*.zip") {
         $archive = [IO.Compression.ZipFile]::OpenRead($zip.FullName)
@@ -17,6 +23,12 @@ foreach ($variant in @('msvc','clang')) {
             }
             [ordered]@{archive=$zip.Name; bytes=$zip.Length; entries=@($entries)} | ConvertTo-Json -Depth 6 | Set-Content "$out/$variant-$($zip.BaseName)-inventory.json"
         } finally { $archive.Dispose() }
+    }
+    $isClang = Test-ClangToolset -PhpBinary "$($runtime[$variant])/php.exe"
+    if ($isClang -ne ($variant -eq 'clang')) { throw "Unexpected runtime compiler for $variant" }
+    foreach ($binary in Get-ChildItem $runtime[$variant] -File | Where-Object { $_.Name -match '^php.*\.(exe|dll)$' }) {
+        & $dumpbin /headers /dependents $binary.FullName | Set-Content "$out/$variant-$($binary.Name)-pe.txt"
+        if ($LASTEXITCODE -ne 0) { throw "dumpbin failed for $($binary.Name)" }
     }
     $ini = Write-TestIni $runtime[$variant] 'nocache'
     $exe = "$($runtime[$variant])/php.exe"
@@ -56,3 +68,5 @@ foreach ($mode in @('nocache','opcache','jit')) {
         }
     }
 }
+
+& "$PSScriptRoot/extensions.ps1" -Arch $Arch -Ts $Ts -Runtimes $runtime -Out $out

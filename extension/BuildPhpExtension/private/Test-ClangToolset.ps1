@@ -1,28 +1,9 @@
-Function Test-ClangToolset {
-    <#
-    .SYNOPSIS
-        Check whether the PHP version is built with the clang-cl toolset.
-    .PARAMETER PhpVersion
-        PHP Version
-    #>
+function Test-ClangToolset {
+    <# Check the downloaded runtime, since existing 8.6 releases use MSVC. #>
     [OutputType([bool])]
-    param(
-        [Parameter(Mandatory = $true, Position=0, HelpMessage='PHP Version')]
-        [ValidateNotNull()]
-        [ValidateLength(1, [int]::MaxValue)]
-        [string] $PhpVersion
-    )
-    begin {
-    }
-    process {
-        if ($PhpVersion -eq 'master') {
-            return $true
-        }
-        if ($PhpVersion -notmatch '^(\d+\.\d+(?:\.\d+)?)') {
-            return $false
-        }
-        return [version] $matches[1] -ge [version] '8.6'
-    }
-    end {
-    }
+    param([Parameter(Mandatory)][string] $PhpBinary)
+
+    $info = & $PhpBinary -n -i
+    if ($LASTEXITCODE -ne 0) { throw "Could not identify compiler for $PhpBinary" }
+    return [bool]($info -match '^Compiler => .*clang')
 }
