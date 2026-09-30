@@ -7,17 +7,12 @@ $started = Get-Date
 $env:VALIDATION_CONTROLLER_DIAGNOSTICS = "$out/controller-diagnostics"
 New-Item $env:VALIDATION_CONTROLLER_DIAGNOSTICS -ItemType Directory -Force | Out-Null
 $runnerSource = Get-Content "$root/source/run-tests.php" -Raw
-$oldWorkerExit = @'
-                    kill_children($workerProcs);
-                    error("Worker $i died unexpectedly");
-'@
-$newWorkerExit = @'
-                    $workerStatus = proc_get_status($workerProcs[$i]);
-                    kill_children($workerProcs);
-                    error("Worker $i died unexpectedly: " . json_encode($workerStatus));
-'@
-if (-not $runnerSource.Contains($oldWorkerExit)) { throw 'Cannot instrument worker exit status' }
-Set-Content "$root/source/diagnostic-run-tests.php" $runnerSource.Replace($oldWorkerExit, $newWorkerExit) -Encoding utf8NoBOM
+$workerEof = 'if (feof($workerSock)) {'
+$workerError = 'error("Worker $i died unexpectedly");'
+if (-not $runnerSource.Contains($workerEof) -or -not $runnerSource.Contains($workerError)) { throw 'Cannot instrument worker exit status' }
+$runnerSource = $runnerSource.Replace($workerEof, $workerEof + ' $validationWorkerStatus = proc_get_status($workerProcs[$i]);')
+$runnerSource = $runnerSource.Replace($workerError, 'error("Worker $i died unexpectedly: " . json_encode($validationWorkerStatus));')
+Set-Content "$root/source/diagnostic-run-tests.php" $runnerSource -Encoding utf8NoBOM
 $crashKey = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\php.exe'
 New-Item $crashKey -Force | Out-Null
 New-ItemProperty $crashKey -Name DumpFolder -Value "$out/crashes" -PropertyType ExpandString -Force | Out-Null
