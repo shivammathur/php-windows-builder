@@ -11,10 +11,12 @@ on:
         description: PHP source for builds and regression tests
         required: true
         default: 246c0d7d28079de9450b09782f4af8a645ab77cc
-      diagnose-cfg:
-        description: Also capture the Clang x64 Control Flow Guard failure separately
-        type: boolean
-        default: false
+      test-matrix:
+        description: Optional regression matrix JSON for targeted reruns
+        required: false
+      test-files:
+        description: Optional JSON array of PHPT paths for differential reruns
+        required: false
       diagnose-runtime-run:
         description: Only debug retained runtimes (JSON array of run, artifact, label)
         required: false
@@ -36,10 +38,6 @@ on:
         type: choice
         options: [both, x64, x86]
         default: both
-      sbom:
-        type: choice
-        options: ['true', 'false']
-        default: 'true'
 permissions:
   contents: read
   actions: read
@@ -72,37 +70,6 @@ jobs:
         with:
           name: runtime-analysis-${{ matrix.label }}
           path: diagnostics/
-  diagnose-cfg:
-    if: ${{ inputs.diagnose-cfg }}
-    runs-on: windows-2025-vs2026
-    timeout-minutes: 90
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          path: harness
-      - shell: pwsh
-        run: git config --global core.autocrlf false
-      - uses: actions/checkout@v6
-        with:
-          repository: shivammathur/php-src
-          ref: 5228e4b5d13f42d22ce43b0392d79e428c60d485
-          path: source
-      - uses: actions/checkout@v6
-        with:
-          path: builder
-      - name: Reproduce CFG failure with crash diagnostics
-        continue-on-error: true
-        shell: pwsh
-        env:
-          SBOM: 'true'
-          GITHUB_TOKEN: ${{ github.token }}
-          PHP_BUILD_PROVIDER: The PHP Group
-        run: ./harness/.github/scripts/clang-comparison/build.ps1 -Variant clang -Arch x64 -Ts nts
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: cfg-diagnostics
-          path: results/
   build:
     if: ${{ inputs.build-run == '' && inputs.diagnose-runtime-run == '' }}
     strategy:
@@ -131,7 +98,7 @@ jobs:
       - name: Build and capture diagnostics
         shell: pwsh
         env:
-          SBOM: ${{ inputs.sbom }}
+          SBOM: 'true'
           GITHUB_TOKEN: ${{ github.token }}
           PHP_BUILD_PROVIDER: The PHP Group
         run: ./harness/.github/scripts/clang-comparison/build.ps1 -Variant '${{ matrix.variant }}' -Arch '${{ matrix.arch }}' -Ts '${{ matrix.ts }}'
@@ -142,7 +109,7 @@ jobs:
           path: results/
           retention-days: 14
   compare:
-    if: ${{ !cancelled() && (needs.build.result == 'success' || inputs.build-run != '') }}
+    if: ${{ !cancelled() && inputs.test-matrix == '' && (needs.build.result == 'success' || inputs.build-run != '') }}
     needs: build
     strategy:
       fail-fast: false
@@ -185,14 +152,12 @@ jobs:
     needs: build
     strategy:
       fail-fast: false
-      matrix:
-        arch: ${{ fromJSON(inputs.test-arch == 'x64' && '["x64"]' || inputs.test-arch == 'x86' && '["x86"]' || '["x64", "x86"]') }}
-        ts: [nts, ts]
-        mode: [nocache, jit]
+      matrix: ${{ fromJSON(inputs.test-matrix || (inputs.test-arch == 'x64' && '{"arch":["x64"],"ts":["nts","ts"],"mode":["nocache","jit"]}') || (inputs.test-arch == 'x86' && '{"arch":["x86"],"ts":["nts","ts"],"mode":["nocache","jit"]}') || '{"arch":["x64","x86"],"ts":["nts","ts"],"mode":["nocache","jit"]}') }}
     runs-on: windows-2025-vs2026
     timeout-minutes: 240
     env:
       REUSE_SOURCE_REF: ${{ inputs.reuse-source-ref }}
+      VALIDATION_TEST_FILES: ${{ inputs.test-files }}
     steps:
       - uses: actions/checkout@v6
       - shell: pwsh

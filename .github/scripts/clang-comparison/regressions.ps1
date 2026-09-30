@@ -1,6 +1,7 @@
 param([string]$Mode)
 . "$PSScriptRoot/common.ps1"
 $root = $env:GITHUB_WORKSPACE
+$tests = if ($env:VALIDATION_TEST_FILES) { @($env:VALIDATION_TEST_FILES | ConvertFrom-Json) } else { @('tests','Zend/tests','sapi','ext') }
 $out = New-Item "$root/regressions" -ItemType Directory -Force
 foreach ($variant in @('msvc','clang')) {
     $runtime = Expand-Runtime $variant
@@ -29,7 +30,7 @@ foreach ($variant in @('msvc','clang')) {
     $env:REPORT_EXIT_STATUS = '1'
     $env:SKIP_IO_CAPTURE_TESTS = '1'
     Set-Location "$root/source"
-    & $env:TEST_PHP_EXECUTABLE -n -c $controllerIni run-tests.php -p $env:TEST_PHP_EXECUTABLE -n -c $ini -q --offline --no-progress --show-diff --set-timeout 90 -j4 -g FAIL,BORK,WARN,LEAK tests Zend/tests sapi ext 2>&1 | Tee-Object "$out/$variant.log"
+    & $env:TEST_PHP_EXECUTABLE -n -c $controllerIni run-tests.php -p $env:TEST_PHP_EXECUTABLE -n -c $ini -q --offline --no-progress --show-diff --set-timeout 90 -j4 -g FAIL,BORK,WARN,LEAK @tests 2>&1 | Tee-Object "$out/$variant.log"
     $testExit = $LASTEXITCODE
     [ordered]@{variant=$variant; mode=$Mode;exitCode=$testExit;source=(& git rev-parse HEAD)} | ConvertTo-Json | Set-Content "$out/$variant-status.json"
     if (-not (Test-Path $env:TEST_PHP_JUNIT) -or (Get-Item $env:TEST_PHP_JUNIT).Length -eq 0) { throw "$variant test runner terminated without JUnit results" }
