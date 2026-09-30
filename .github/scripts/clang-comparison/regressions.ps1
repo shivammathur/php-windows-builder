@@ -39,8 +39,24 @@ foreach ($variant in @('msvc','clang')) {
     if ($tests -contains 'ext' -or $tests -contains 'ext/com_dotnet/tests') {
         & "$PSScriptRoot/prepare-comtest.ps1" -Variant $variant
     }
-    & $env:TEST_PHP_EXECUTABLE -n -c $controllerIni run-tests.php -p $env:TEST_PHP_EXECUTABLE -n -c $ini -q --offline --no-progress --show-diff --set-timeout 90 -j4 -g FAIL,BORK,WARN,LEAK @tests 2>&1 | Tee-Object "$out/$variant.log"
-    $testExit = $LASTEXITCODE
+    # Redirect to a file in cmd, so a test's surviving child cannot hold open
+    # PowerShell's native output pipe after run-tests has printed its summary.
+    $arguments = @('-n','-c',$controllerIni,'run-tests.php','-p',$env:TEST_PHP_EXECUTABLE,'-n','-c',$ini,'-q','--offline','--no-progress','--show-diff','--set-timeout','90','-j4','-g','FAIL,BORK,WARN,LEAK') + $tests
+    $command = '"' + $env:TEST_PHP_EXECUTABLE + '" ' + (($arguments | ForEach-Object { '"' + $_ + '"' }) -join ' ') + ' > "' + "$out/$variant.log" + '" 2>&1'
+    $launcher = Join-Path $out "$variant-tests.cmd"
+    Set-Content $launcher "@echo off`r`n$command`r`nexit /b %errorlevel%" -Encoding ascii
+    $process = Start-Process cmd.exe -ArgumentList @('/d','/c',('"' + $launcher + '"')) -NoNewWindow -PassThru
+    $deadline = [DateTime]::UtcNow.AddMinutes(90)
+    while (-not $process.WaitForExit(60000)) {
+        Write-Host "$variant $Mode tests still running; log: $out/$variant.log"
+        if ([DateTime]::UtcNow -ge $deadline) {
+            & taskkill /PID $process.Id /T /F
+            throw "$variant regression controller exceeded 90 minutes"
+        }
+    }
+    $testExit = $process.ExitCode
+    Get-Content "$out/$variant.log" | Write-Host
+    Write-Host "$variant test controller exited: $testExit; collecting results"
     [ordered]@{variant=$variant; mode=$Mode;exitCode=$testExit;source=(& git rev-parse HEAD)} | ConvertTo-Json | Set-Content "$out/$variant-status.json"
     if (-not (Test-Path $env:TEST_PHP_JUNIT) -or (Get-Item $env:TEST_PHP_JUNIT).Length -eq 0) { throw "$variant test runner terminated without JUnit results" }
     [xml]$junit = Get-Content $env:TEST_PHP_JUNIT -Raw
