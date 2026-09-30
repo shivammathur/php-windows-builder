@@ -40,6 +40,36 @@ foreach ($probe in $probes) {
     }
 }
 if ($Kind -eq 'x64-cfg') {
+    @'
+#ifdef PRESERVE_NONE
+# define CC __attribute__((preserve_none))
+#else
+# define CC
+#endif
+typedef int fn_type(int) CC;
+__declspec(noinline) int CC add_one(int x) { return x+1; }
+fn_type *volatile func = add_one;
+int main(void) { return func(41) != 42; }
+'@ | Set-Content "$out/guard-probe.c"
+    $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+    $vs = & $vswhere -latest -products '*' -property installationPath
+    foreach ($mode in @('normal','preserve-none')) {
+        $define = if ($mode -eq 'preserve-none') { '/DPRESERVE_NONE' } else { '' }
+        @(
+            '@echo off',
+            ('call "{0}\VC\Auxiliary\Build\vcvars64.bat"' -f $vs),
+            ('cd /d "{0}"' -f $out),
+            ('clang-cl /O2 /guard:cf {0} guard-probe.c /Feguard-{1}.exe /link /guard:cf' -f $define,$mode),
+            'if errorlevel 1 exit /b 1',
+            ('clang-cl /O2 /guard:cf {0} /c /FA /Faguard-{1}.asm guard-probe.c' -f $define,$mode),
+            'exit /b %errorlevel%'
+        ) | Set-Content "$out/guard-$mode.bat"
+        & cmd /c "$out/guard-$mode.bat" 2>&1 | Set-Content "$out/guard-$mode-build.txt"
+        if ($LASTEXITCODE -ne 0) { throw "Guard probe compile failed: $mode" }
+        & "$out/guard-$mode.exe"
+        "exit=$LASTEXITCODE" | Set-Content "$out/guard-$mode-result.txt"
+    }
+
     # Diagnostic copy only: clear the image CFG bit, preserving compiled code.
     # Never publish or use this modified copy for performance comparisons.
     $copy = "$root/cfg-disabled-diagnostic"
