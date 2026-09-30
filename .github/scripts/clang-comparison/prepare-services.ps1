@@ -60,9 +60,7 @@ $env:SNMP_MIBDIR = $env:MIBDIRS
 $config = Get-Content "$root/source/ext/snmp/tests/snmpd.conf" -Raw
 $config = $config -replace 'exec HexTest .*', "exec HexTest cscript.exe /nologo $($root.Replace('\','/'))/source/ext/snmp/tests/bigtest.js"
 Set-Content "$qa/snmpd.conf" $config -Encoding ascii
-$server = Start-Process "$qa/snmp/bin/snmpd.exe" -ArgumentList @('-C','-c',"$qa/snmpd.conf",'-Ln') -PassThru -RedirectStandardOutput "$root/regressions/snmp-server.log" -RedirectStandardError "$root/regressions/snmp-server-errors.log"
-if ($server.WaitForExit(1000)) { throw "SNMP fixture exited: $($server.ExitCode)" }
 $env:VALIDATION_EXTERNAL_DEPS = '1'
 $credentials.firebird = @{user='SYSDBA';password='phpfi';dsn=$env:PDO_FIREBIRD_TEST_DSN}
-$credentials.snmp = @{pid=$server.Id;readCommunity='public';writeCommunity='private';testPassword='test1234';mibs=$env:MIBDIRS}
+$credentials.snmp = @{readCommunity='public';writeCommunity='private';testPassword='test1234';mibs=$env:MIBDIRS}
 $credentials | ConvertTo-Json -Depth 4 | Set-Content "$root/regressions/qa-fixtures.json"

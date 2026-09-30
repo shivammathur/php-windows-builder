@@ -25,6 +25,7 @@ foreach ($variant in @('msvc','clang')) {
     if ($variant -eq 'msvc' -and ($env:VALIDATION_DATABASE_SERVICES -eq 'true' -or $tests -contains 'ext' -or $tests -contains 'ext/pdo_firebird/tests' -or $tests -contains 'ext/snmp/tests')) {
         . "$PSScriptRoot/prepare-services.ps1" -Runtime $runtime
     }
+    & "$PSScriptRoot/start-snmp.ps1" -Runtime $runtime -Variant $variant
     $ini = Write-TestIni $runtime $Mode
     # run-tests spawns its controller workers without the parent's -c option.
     # Redirect tests execute in those workers and require COM/PDO there too.
