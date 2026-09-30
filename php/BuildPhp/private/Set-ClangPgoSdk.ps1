@@ -2,6 +2,13 @@ function Set-ClangPgoSdk {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string] $SdkDirectory)
 
+    # Packaging and SBOM export parse the compiler from the archive name.
+    $sbomPath = Join-Path $SdkDirectory 'bin/phpsdk_sbom.php'
+    $sbom = Get-Content $sbomPath -Raw
+    $compilerPattern = 'v[sc]\d+'
+    if (($sbom.Split($compilerPattern)).Count -ne 3) { throw 'Unexpected SDK archive-name parser' }
+    Set-Content $sbomPath $sbom.Replace($compilerPattern, '(?:v[sc]\d+|clang)') -Encoding utf8NoBOM
+
     # SDK 2.8.4 forcibly kills CGI and overwrites the request limit. LLVM
     # writes profiles at normal process exit, unlike MSVC's pgosweep.
     $fcgiPath = Join-Path $SdkDirectory 'lib/php/libsdk/SDK/Build/PGO/PHP/FCGI.php'

@@ -27,7 +27,7 @@ foreach ($variant in @('msvc','clang')) {
     $isClang = Test-ClangToolset -PhpBinary "$($runtime[$variant])/php.exe"
     if ($isClang -ne ($variant -eq 'clang')) { throw "Unexpected runtime compiler for $variant" }
     foreach ($binary in Get-ChildItem $runtime[$variant] -File | Where-Object { $_.Name -match '^php.*\.(exe|dll)$' }) {
-        & $dumpbin /headers /dependents $binary.FullName | Set-Content "$out/$variant-$($binary.Name)-pe.txt"
+        & $dumpbin /headers /loadconfig /dependents $binary.FullName | Set-Content "$out/$variant-$($binary.Name)-pe.txt"
         if ($LASTEXITCODE -ne 0) { throw "dumpbin failed for $($binary.Name)" }
     }
     $ini = Write-TestIni $runtime[$variant] 'nocache'
@@ -44,7 +44,11 @@ $metadata | ConvertTo-Json -Depth 8 | Set-Content "$out/metadata.json"
 $results = [Collections.Generic.List[object]]::new()
 foreach ($mode in @('nocache','opcache','jit')) {
     $inis=@{}
-    foreach ($variant in @('msvc','clang')) { $inis[$variant] = Write-TestIni $runtime[$variant] $mode }
+    foreach ($variant in @('msvc','clang')) {
+        $inis[$variant] = Write-TestIni $runtime[$variant] $mode
+        & "$($runtime[$variant])/php.exe" -n -c $inis[$variant] -r 'echo json_encode(["ini"=>php_ini_loaded_file(), "opcache_enable_cli"=>ini_get("opcache.enable_cli"), "jit"=>ini_get("opcache.jit"), "status"=>opcache_get_status(false)], JSON_THROW_ON_ERROR);' | Set-Content "$out/$variant-$mode-status.json"
+        if ($LASTEXITCODE -ne 0) { throw "Failed to inspect $variant $mode configuration" }
+    }
     foreach ($workload in @('integer_calls','objects','arrays','json','strings_regex','hash','zend_bench')) {
         $repeats = 1
         if ($workload -ne 'zend_bench') {

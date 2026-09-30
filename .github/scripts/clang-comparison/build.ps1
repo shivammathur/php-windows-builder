@@ -9,7 +9,6 @@ try {
     Import-Module "$root/builder/php/BuildPhp" -Force
     Set-Location "$root/source"
     Invoke-PhpBuild -Arch $Arch -Ts $Ts
-    Copy-Item artifacts/*.zip $out
     $meta.finished = [DateTime]::UtcNow.ToString('o')
     $meta | ConvertTo-Json | Set-Content "$out/metadata.json"
 } finally {
@@ -19,11 +18,16 @@ try {
     }
     $buildDir = if ($Ts -eq 'ts') { 'obj/Release_TS' } else { 'obj/Release' }
     if (Test-Path $buildDir) {
+        # Preserve archives even when a later compliance/export step fails.
+        Get-ChildItem "$buildDir/php-*.zip" -File | Copy-Item -Destination $out
         Get-ChildItem $buildDir -File | Select-Object Name,Length | ConvertTo-Json | Set-Content "$out/build-files.json"
         if (Test-Path "$buildDir/php.profdata") {
             Copy-Item "$buildDir/php.profdata" $out
             & llvm-profdata show --all-functions --counts "$buildDir/php.profdata" > "$out/profile.txt"
         }
+    }
+    if (Test-Path 'source/artifacts') {
+        Get-ChildItem 'source/artifacts' -File | Copy-Item -Destination $out -Force
     }
     Stop-Transcript
 }
