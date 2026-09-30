@@ -4,7 +4,9 @@ $root = $env:GITHUB_WORKSPACE
 $Out = $Out.Replace('\','/')
 $archive = if ($Arch -eq 'x64') { 'httpd-2.4.68-260920-Win64-VS18.zip' } else { 'httpd-2.4.68-260920-win32-vs18.zip' }
 $hash = if ($Arch -eq 'x64') { 'F6DCF17D08AA32721AE418CD818C157E4C521C9E889B758646FB64287F1D56E3' } else { '69E0A8A8C6284ED85CAC10B9ED1FA809E2DE91159E1A7CD7133FBE93EFFCD426' }
-Invoke-WebRequest "https://www.apachelounge.com/download/VS18/binaries/$archive" -OutFile "$root/apache.zip"
+# Apache Lounge redirects PowerShell's user agent to http://localhost/.
+& curl.exe --fail --silent --show-error --location --proto '=https' --proto-redir '=https' "https://www.apachelounge.com/download/VS18/binaries/$archive" --output "$root/apache.zip"
+if ($LASTEXITCODE -ne 0) { throw 'Apache fixture download failed' }
 if ((Get-FileHash "$root/apache.zip" -Algorithm SHA256).Hash -ne $hash) { throw 'Apache fixture checksum mismatch' }
 Expand-Archive "$root/apache.zip" "$root/apache"
 $server = (Get-ChildItem "$root/apache" -Recurse -Filter httpd.exe).FullName
