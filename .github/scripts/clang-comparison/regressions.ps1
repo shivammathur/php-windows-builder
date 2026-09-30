@@ -89,7 +89,17 @@ foreach ($variant in @('msvc','clang')) {
         New-Item ([IO.Path]::GetDirectoryName($target)) -ItemType Directory -Force | Out-Null
         Copy-Item $file.FullName $target
     }
-    if (-not (Test-Path $env:TEST_PHP_JUNIT) -or (Get-Item $env:TEST_PHP_JUNIT).Length -eq 0) { throw "$variant test runner terminated without JUnit results" }
+    if (-not (Test-Path $env:TEST_PHP_JUNIT) -or (Get-Item $env:TEST_PHP_JUNIT).Length -eq 0) {
+        if ($tests -contains 'Zend/tests/stack_limit') {
+            Expand-Archive (Get-ChildItem "$root/input/$variant/php-debug-pack-*.zip").FullName $runtime -Force
+            foreach ($case in @('stack_limit_001','stack_limit_002','stack_limit_006','stack_limit_014')) {
+                $env:TEST_PHP_JUNIT = "$out/debug-$case.xml"
+                $debugArgs = @('-n','-c',$controllerIni,'diagnostic-run-tests.php','-p',$env:TEST_PHP_EXECUTABLE,'-n','-c',$ini,'-q','--offline','--no-progress','--show-diff','--set-timeout','90',"Zend/tests/stack_limit/$case.phpt")
+                & lldb.exe --batch --no-lldbinit -o run -k 'image list' -k 'thread backtrace all' -k 'register read' -k 'disassemble --frame' -- "$runtime/php.exe" @debugArgs 2>&1 | Set-Content "$out/debug-$case.txt"
+            }
+        }
+        throw "$variant test runner terminated without JUnit results"
+    }
     [xml]$junit = Get-Content $env:TEST_PHP_JUNIT -Raw
     if ($junit.SelectNodes('//testcase').Count -eq 0) { throw "$variant JUnit report contains no tests" }
     # Restore generated test files before the second compiler's run.
