@@ -203,11 +203,6 @@ jobs:
       - name: Prepare php-src database services
         if: env.VALIDATION_DATABASE_SERVICES == 'true'
         uses: ./source/.github/actions/setup-windows
-      - uses: actions/setup-python@v6
-        if: contains(inputs.test-files, 'Zend/tests/stack_limit')
-        with:
-          python-version: '3.10'
-          update-environment: false
       - name: Run identical PHP test suites for both compilers
         shell: pwsh
         run: ./.github/scripts/clang-comparison/regressions.ps1 -Mode '${{ matrix.mode }}'
