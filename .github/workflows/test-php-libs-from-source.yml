@@ -48,6 +48,7 @@ jobs:
   php:
     needs: resolve-runner
     strategy:
+      fail-fast: false
       matrix:
         arch: [x64, x86]
         ts: [nts, ts]
@@ -120,12 +121,12 @@ jobs:
         run: |
           $artifactDirectory = $(pwd).Path
           $zip = Get-ChildItem -Path $artifactDirectory -Filter "php-*.zip" -File |
-            Where-Object { $_.Name -match "^php-(.+?)-(?:nts-)?Win32-v[sc]\d+-${{ matrix.arch }}\.zip$" } |
+            Where-Object { $_.Name -match "^php-(.+?)-(?:nts-)?Win32-(?:v[sc]\d+|clang)-${{ matrix.arch }}\.zip$" } |
             Select-Object -First 1
           if ($null -eq $zip) {
             throw "Unable to determine PHP version from build artifacts in $artifactDirectory"
           }
-          $phpVersion = [regex]::Match($zip.Name, '^php-(.+?)-(?:nts-)?Win32-v[sc]\d+-').Groups[1].Value
+          $phpVersion = [regex]::Match($zip.Name, '^php-(.+?)-(?:nts-)?Win32-(?:v[sc]\d+|clang)-').Groups[1].Value
 
           Import-Module (Join-Path $(pwd).Path '\php\BuildPhp') -Force
           $cacheInfo = Get-DepsCacheInfo -PhpVersion $phpVersion -Arch '${{ matrix.arch }}' -LibsBuildRuns '${{ inputs.libs-build-runs }}' -IncludeDefaultRunsKey
