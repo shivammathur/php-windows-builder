@@ -1,192 +1,128 @@
-name: Build PHP with custom library builds from winlibs/winlib-builder (source)
-run-name: Build PHP from source ${{ inputs.php-src-ref }}
+name: Clang PR 33 validation
+run-name: Clang vs MSVC - ${{ inputs.php-src-ref }}
 on:
   workflow_dispatch:
     inputs:
       php-src-repository:
-        description: 'php-src repository to source builds and tests from'
+        description: PHP source repository
         required: true
+        default: php/php-src
       php-src-ref:
-        description: 'Branch, tag, or SHA in the php-src repository to source builds and tests from'
+        description: Identical PHP source for both compilers
         required: true
+        default: a8e7901b8dfcfd2fe7c89e06a8790e9b5a7e2244
       libs-build-runs:
-        description: 'Comma-separated list of GitHub Actions run IDs from winlibs/winlib-builder'
+        description: Optional dependency builds
         required: false
       sbom:
         type: choice
         options: ['true', 'false']
-        description: Add SBOM files to binary archives
-        required: false
         default: 'true'
-
+permissions:
+  contents: read
 jobs:
-  resolve-runner:
-    runs-on: ubuntu-latest
-    outputs:
-      runner: ${{ steps.resolve.outputs.runner }}
-    steps:
-      - name: Checkout PHP source
-        uses: actions/checkout@v6
-        with:
-          repository: ${{ inputs.php-src-repository }}
-          ref: ${{ inputs.php-src-ref }}
-          token: ${{ secrets.GITHUB_TOKEN }}
-          path: php-src
-          fetch-depth: 1
-          sparse-checkout: main/php_version.h
-          sparse-checkout-cone-mode: false
-
-      - name: Resolve runner
-        id: resolve
-        shell: bash
-        run: |
-          read -r major minor < <(awk '/^#define PHP_(MAJOR|MINOR)_VERSION/ { v[++i]=$3 } END { print v[1], v[2] }' php-src/main/php_version.h)
-          runner="$([ "$major" -gt 8 ] || { [ "$major" -eq 8 ] && [ "$minor" -ge 6 ]; } && echo windows-2025-vs2026 || echo windows-2022)"
-          echo "PHP source version: $major.$minor; runner: $runner"
-          echo "runner=$runner" >> "$GITHUB_OUTPUT"
-
-  php:
-    needs: resolve-runner
+  build:
     strategy:
+      fail-fast: false
       matrix:
         arch: [x64, x86]
         ts: [nts, ts]
-    runs-on: ${{ needs.resolve-runner.outputs.runner }}
+        variant: [msvc, clang]
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 180
     steps:
-      - name: Configure PHP source line endings
-        shell: pwsh
-        run: |
-          git config --global core.autocrlf false
-          git config --global core.eol lf
-
-      - name: Checkout PHP source
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v6
+        with:
+          path: harness
+      - shell: pwsh
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v6
         with:
           repository: ${{ inputs.php-src-repository }}
           ref: ${{ inputs.php-src-ref }}
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Checkout
-        uses: actions/checkout@v6
+          path: source
+      - uses: actions/checkout@v6
         with:
+          ref: ${{ matrix.variant == 'msvc' && '44b177dd05168995a788123c8807a70e2d0db20c' || github.sha }}
           path: builder
-
-      - name: Build
-        uses: ./builder/php
-        with:
-          arch: ${{ matrix.arch }}
-          ts: ${{ matrix.ts }}
-          libs-build-runs: ${{ inputs.libs-build-runs }}
-          sbom: ${{ inputs.sbom }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-        env:
-          PHP_BUILD_PROVIDER: "The PHP Group"
-
-  artifacts:
-    runs-on: ubuntu-latest
-    needs: php
-    outputs:
-      artifact-id: ${{ steps.artifacts.outputs.artifact-id }}
-    steps:
-      - name: Upload artifacts
-        uses: actions/upload-artifact/merge@v7
-        id: artifacts
-        with:
-          name: artifacts
-          delete-merged: true
-
-  tests:
-    needs: [resolve-runner, artifacts]
-    strategy:
-      matrix:
-        arch: [x64, x86]
-        ts: [nts, ts]
-        opcache: [opcache, nocache]
-        test-type: [php, ext]
-    runs-on: ${{ needs.resolve-runner.outputs.runner }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Download artifacts
-        uses: actions/download-artifact@v8
-        id: artifacts
-        with:
-          name: artifacts
-
-      - name: Get Cache Key
-        id: cache-key
+      - name: Build and capture diagnostics
         shell: pwsh
-        run: |
-          $artifactDirectory = $(pwd).Path
-          $zip = Get-ChildItem -Path $artifactDirectory -Filter "php-*.zip" -File |
-            Where-Object { $_.Name -match "^php-(.+?)-(?:nts-)?Win32-v[sc]\d+-${{ matrix.arch }}\.zip$" } |
-            Select-Object -First 1
-          if ($null -eq $zip) {
-            throw "Unable to determine PHP version from build artifacts in $artifactDirectory"
-          }
-          $phpVersion = [regex]::Match($zip.Name, '^php-(.+?)-(?:nts-)?Win32-v[sc]\d+-').Groups[1].Value
-
-          Import-Module (Join-Path $(pwd).Path '\php\BuildPhp') -Force
-          $cacheInfo = Get-DepsCacheInfo -PhpVersion $phpVersion -Arch '${{ matrix.arch }}' -LibsBuildRuns '${{ inputs.libs-build-runs }}' -IncludeDefaultRunsKey
-          Set-Content -Path packages.txt -Value ($cacheInfo.Packages -join "`n")
-          Add-Content -Value "php-version=$phpVersion" -Path $env:GITHUB_OUTPUT
-          Add-Content -Value "cache-key=$($cacheInfo.CacheKey)" -Path $env:GITHUB_OUTPUT
-          Add-Content -Value "cache-dir=$($cacheInfo.CacheDir)" -Path $env:GITHUB_OUTPUT
-
-      - name: Cache Deps
-        id: cache-deps
-        uses: actions/cache@v5
-        with:
-          path: ${{ steps.cache-key.outputs.cache-dir }}
-          key: ${{ steps.cache-key.outputs.cache-key }}-${{ hashFiles('packages.txt') }}
-
-      - name: Test PHP
-        shell: pwsh
-        continue-on-error: true
         env:
-          DEPS_DIR: ${{ steps.cache-key.outputs.cache-dir }}
-          DEPS_CACHE_HIT: ${{ steps.cache-deps.outputs.cache-hit }}
+          SBOM: ${{ inputs.sbom }}
           LIBS_BUILD_RUNS: ${{ inputs.libs-build-runs }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          Import-Module (Join-Path $(pwd).Path '\php\BuildPhp') -Force
-          Invoke-PhpTests -PhpVersion ${{ steps.cache-key.outputs.php-version }} `
-                          -Arch ${{matrix.arch}} `
-                          -Ts ${{matrix.ts}} `
-                          -Opcache ${{matrix.opcache}} `
-                          -TestType ${{matrix.test-type}} `
-                          -SourceRepository '${{ inputs.php-src-repository }}' `
-                          -SourceRef '${{ inputs.php-src-ref }}'
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v7
-        continue-on-error: true
+          GITHUB_TOKEN: ${{ github.token }}
+          PHP_BUILD_PROVIDER: The PHP Group
+        run: ./harness/.github/scripts/clang-comparison/build.ps1 -Variant '${{ matrix.variant }}' -Arch '${{ matrix.arch }}' -Ts '${{ matrix.ts }}'
+      - uses: actions/upload-artifact@v7
+        if: always()
         with:
-          name: test-results-${{matrix.arch}}-${{matrix.ts}}-${{matrix.opcache}}-${{matrix.test-type}}
-          path: test-${{matrix.arch}}-${{matrix.ts}}-${{matrix.opcache}}-${{matrix.test-type}}.xml
-
-  smoke-tests:
+          name: build-${{ matrix.variant }}-${{ matrix.arch }}-${{ matrix.ts }}
+          path: results/
+          retention-days: 14
+  compare:
+    needs: build
     strategy:
+      fail-fast: false
       matrix:
         arch: [x64, x86]
         ts: [nts, ts]
-    runs-on: ${{ needs.resolve-runner.outputs.runner }}
-    needs: [resolve-runner, artifacts]
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 90
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Download artifacts
-        uses: actions/download-artifact@v8
+      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6
         with:
-          name: artifacts
-          path: artifacts
-
-      - name: Smoke test PHP builds
+          repository: ${{ inputs.php-src-repository }}
+          ref: ${{ inputs.php-src-ref }}
+          path: source
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-msvc-${{ matrix.arch }}-${{ matrix.ts }}
+          path: input/msvc
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-clang-${{ matrix.arch }}-${{ matrix.ts }}
+          path: input/clang
+      - name: Compare archives and benchmark on the same machine
         shell: pwsh
-        run: |
-          Import-Module (Join-Path $(pwd).Path '\php\BuildPhp') -Force
-          Invoke-PhpSmokeTests -ArtifactsDirectory (Join-Path $(pwd).Path 'artifacts') `
-                               -Arch ${{matrix.arch}} `
-                               -Ts ${{matrix.ts}}
+        run: ./.github/scripts/clang-comparison/compare.ps1 -Arch '${{ matrix.arch }}' -Ts '${{ matrix.ts }}'
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: comparison-${{ matrix.arch }}-${{ matrix.ts }}
+          path: comparison/
+  regressions:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, x86]
+        ts: [nts, ts]
+        mode: [nocache, jit]
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v6
+      - shell: pwsh
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v6
+        with:
+          repository: ${{ inputs.php-src-repository }}
+          ref: ${{ inputs.php-src-ref }}
+          path: source
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-msvc-${{ matrix.arch }}-${{ matrix.ts }}
+          path: input/msvc
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-clang-${{ matrix.arch }}-${{ matrix.ts }}
+          path: input/clang
+      - name: Run identical PHP test suites for both compilers
+        shell: pwsh
+        run: ./.github/scripts/clang-comparison/regressions.ps1 -Mode '${{ matrix.mode }}'
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: regressions-${{ matrix.arch }}-${{ matrix.ts }}-${{ matrix.mode }}
+          path: regressions/

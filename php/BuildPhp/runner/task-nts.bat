@@ -9,7 +9,7 @@ rem clang-cl PGO: --enable-pgi/--with-pgo add the profile flags via configure, p
 rem the profiles go into BUILD_DIR, which nmake clean-pgo preserves like the pgd files of the Visual Studio flow.
 set "PGO_DIR=%CD%\..\obj\Release"
 del /f /q "%PGO_DIR%\*.profraw" "%PGO_DIR%\php.profdata" >nul 2>&1
-set "LLVM_PROFILE_FILE=%PGO_DIR%\php-%%p.profraw"
+set "LLVM_PROFILE_FILE=%PGO_DIR%\php-%%m-%%p.profraw"
 rem init only serves one request, have php-cgi exit right away so its profile is written before the training env shutdown.
 set "PHP_FCGI_MAX_REQUESTS=1"
 call config.nts.bat 2>&1
@@ -18,6 +18,8 @@ nmake 2>&1
 if errorlevel 1 exit 3
 call phpsdk_pgo --init 2>&1
 if errorlevel 1 exit 4
+rem Exclude installer and version-probe profiles from the training data.
+del /f /q "%PGO_DIR%\*.profraw" >nul 2>&1
 rem pgo01org serves 12 requests per scenario (max_runs x 1 url); php-cgi self-exits after the last one and writes its profile.
 set "PHP_FCGI_MAX_REQUESTS=12"
 call phpsdk_pgo --train --scenario default 2>&1

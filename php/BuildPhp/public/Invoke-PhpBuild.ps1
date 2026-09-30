@@ -48,6 +48,10 @@ function Invoke-PhpBuild {
 
             Add-BuildRequirements -PhpVersion $PhpVersion -Arch $Arch -FetchSrc:$fetchSrc
 
+            if ($VsConfig.vs -eq 'vs18') {
+                Set-ClangPgoSdk -SdkDirectory (Join-Path $buildDirectory 'php-sdk')
+            }
+
             $configDirectory = Join-Path $PSScriptRoot "..\config\$($VsConfig.vs)\$Arch"
 
             if($fetchSrc) {
