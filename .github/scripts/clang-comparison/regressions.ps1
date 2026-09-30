@@ -3,6 +3,11 @@ param([string]$Mode)
 $root = $env:GITHUB_WORKSPACE
 [string[]]$tests = if ($env:VALIDATION_TEST_FILES) { @($env:VALIDATION_TEST_FILES | ConvertFrom-Json) } else { @('tests','Zend/tests','sapi','ext') }
 $out = New-Item "$root/regressions" -ItemType Directory -Force
+$started = Get-Date
+$crashKey = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\php.exe'
+New-Item $crashKey -Force | Out-Null
+New-ItemProperty $crashKey -Name DumpFolder -Value "$out/crashes" -PropertyType ExpandString -Force | Out-Null
+New-ItemProperty $crashKey -Name DumpType -Value 1 -PropertyType DWord -Force | Out-Null
 foreach ($variant in @('msvc','clang')) {
     $runtime = Expand-Runtime $variant
     # Match php-src CI's SSL configuration setup for both architectures.
@@ -16,6 +21,9 @@ foreach ($variant in @('msvc','clang')) {
     # Redirect tests execute in those workers and require COM/PDO there too.
     # Keep JIT on the tested programs; the test controllers use plain CLI.
     $controllerIni = Write-TestIni $runtime 'nocache'
+    Copy-Item $controllerIni "$runtime/controller.ini" -Force
+    $controllerIni = "$runtime/controller.ini"
+    Add-Content $controllerIni @('log_errors=1', ('error_log="{0}"' -f "$out/$variant-controller-errors.log"))
     Copy-Item $controllerIni "$runtime/php.ini" -Force
     $env:PHPRC = $controllerIni
     & "$runtime/php.exe" -r 'echo json_encode(["ini"=>php_ini_loaded_file(),"com"=>class_exists("COM"),"pdo"=>class_exists("PDO")]); if (!class_exists("COM") || !class_exists("PDO")) { exit(1); }' | Set-Content "$out/$variant-controller.json"
@@ -44,7 +52,7 @@ foreach ($variant in @('msvc','clang')) {
     }
     # Redirect to a file in cmd, so a test's surviving child cannot hold open
     # PowerShell's native output pipe after run-tests has printed its summary.
-    $arguments = @('-n','-c',$controllerIni,'run-tests.php','-p',$env:TEST_PHP_EXECUTABLE,'-n','-c',$ini,'-q','--offline','--no-progress','--show-diff','--set-timeout','90','-j4','-g','FAIL,BORK,WARN,LEAK') + $tests
+    $arguments = @('-n','-c',$controllerIni,'run-tests.php','-p',$env:TEST_PHP_EXECUTABLE,'-n','-c',$ini,'-q','--offline','--no-progress','--show-diff','--set-timeout','90','-j4','-g','FAIL,BORK,WARN,LEAK','-W',"$out/$variant-results.txt") + $tests
     $command = '"' + $env:TEST_PHP_EXECUTABLE + '" ' + (($arguments | ForEach-Object { '"' + $_ + '"' }) -join ' ') + ' > "' + "$out/$variant.log" + '" 2>&1'
     $launcher = Join-Path $out "$variant-tests.cmd"
     Set-Content $launcher "@echo off`r`n$command`r`nexit /b %errorlevel%" -Encoding ascii
@@ -61,9 +69,9 @@ foreach ($variant in @('msvc','clang')) {
     Get-Content "$out/$variant.log" | Write-Host
     Write-Host "$variant test controller exited: $testExit; collecting results"
     [ordered]@{variant=$variant; mode=$Mode;exitCode=$testExit;source=(& git rev-parse HEAD)} | ConvertTo-Json | Set-Content "$out/$variant-status.json"
-    if (-not (Test-Path $env:TEST_PHP_JUNIT) -or (Get-Item $env:TEST_PHP_JUNIT).Length -eq 0) { throw "$variant test runner terminated without JUnit results" }
-    [xml]$junit = Get-Content $env:TEST_PHP_JUNIT -Raw
-    if ($junit.SelectNodes('//testcase').Count -eq 0) { throw "$variant JUnit report contains no tests" }
+    Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=$started} -ErrorAction Continue |
+        Where-Object ProviderName -In 'Application Error','Windows Error Reporting' |
+        Select-Object TimeCreated,Id,ProviderName,Message | ConvertTo-Json -Depth 5 | Set-Content "$out/$variant-crash-events.json"
     $failures = Get-ChildItem -Path . -Recurse -File -Include '*.diff','*.out','*.exp','*.log' | Where-Object { $_.FullName -notmatch '\.git[\\/]' }
     $dest = New-Item "$out/$variant-failures" -ItemType Directory -Force
     foreach ($file in $failures) {
@@ -72,6 +80,9 @@ foreach ($variant in @('msvc','clang')) {
         New-Item ([IO.Path]::GetDirectoryName($target)) -ItemType Directory -Force | Out-Null
         Copy-Item $file.FullName $target
     }
+    if (-not (Test-Path $env:TEST_PHP_JUNIT) -or (Get-Item $env:TEST_PHP_JUNIT).Length -eq 0) { throw "$variant test runner terminated without JUnit results" }
+    [xml]$junit = Get-Content $env:TEST_PHP_JUNIT -Raw
+    if ($junit.SelectNodes('//testcase').Count -eq 0) { throw "$variant JUnit report contains no tests" }
     # Restore generated test files before the second compiler's run.
     git clean -fdx
     if ($LASTEXITCODE -ne 0) { throw 'Failed to clean isolated test source' }
