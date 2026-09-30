@@ -12,6 +12,17 @@ $workerError = 'error("Worker $i died unexpectedly");'
 if (-not $runnerSource.Contains($workerEof) -or -not $runnerSource.Contains($workerError)) { throw 'Cannot instrument worker exit status' }
 $runnerSource = $runnerSource.Replace($workerEof, $workerEof + ' $validationWorkerStatus = proc_get_status($workerProcs[$i]);')
 $runnerSource = $runnerSource.Replace($workerError, 'error("Worker $i died unexpectedly: " . json_encode($validationWorkerStatus));')
+if ($tests -contains 'Zend/tests/stack_limit') {
+    # Debug the actual workers without changing their Python/PATH environment.
+    Invoke-WebRequest 'https://download.sysinternals.com/files/Procdump.zip' -OutFile "$out/procdump.zip"
+    Expand-Archive "$out/procdump.zip" "$out/procdump"
+    $procdump = "$out/procdump/procdump64.exe"
+    if ((Get-AuthenticodeSignature $procdump).Status -ne 'Valid') { throw 'Invalid ProcDump signature' }
+    New-Item "$out/crashes" -ItemType Directory -Force | Out-Null
+    $debugCommand = '[' + ((@($procdump,'-accepteula','-e','-mm','-x',"$out/crashes") | ForEach-Object { '"' + $_.Replace('\','/') + '"' }) -join ', ') + ', $thisPHP, $thisScript],'
+    $runnerSource = $runnerSource.Replace('[$thisPHP, $thisScript],', $debugCommand)
+    $runnerSource = $runnerSource.Replace('stream_socket_accept($listenSock, 5)', 'stream_socket_accept($listenSock, 30)').Replace('stream_set_timeout($workerSock, 5)', 'stream_set_timeout($workerSock, 30)')
+}
 Set-Content "$root/source/diagnostic-run-tests.php" $runnerSource -Encoding utf8NoBOM
 $crashKey = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\php.exe'
 New-Item $crashKey -Force | Out-Null
@@ -79,6 +90,13 @@ foreach ($variant in @('msvc','clang')) {
     Get-Content "$out/$variant.log" | Write-Host
     Write-Host "$variant test controller exited: $testExit; collecting results"
     [ordered]@{variant=$variant; mode=$Mode;exitCode=$testExit;source=(& git rev-parse HEAD)} | ConvertTo-Json | Set-Content "$out/$variant-status.json"
+    if ($tests -contains 'Zend/tests/stack_limit') {
+        $env:Path = (Get-ChildItem 'C:/hostedtoolcache/windows/Python/3.10*/x64/python.exe' | Select-Object -First 1).DirectoryName + ';' + $env:Path
+        Expand-Archive (Get-ChildItem "$root/input/$variant/php-debug-pack-*.zip").FullName $runtime -Force
+        foreach ($dump in Get-ChildItem "$out/crashes/*.dmp") {
+            & lldb.exe --batch --no-lldbinit --file "$runtime/php.exe" --core $dump.FullName -o 'thread backtrace all' -o 'register read' -o 'disassemble --frame' 2>&1 | Set-Content "$out/$($dump.BaseName)-backtrace.txt"
+        }
+    }
     Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=$started} -ErrorAction Continue |
         Where-Object ProviderName -In 'Application Error','Windows Error Reporting' |
         Select-Object TimeCreated,Id,ProviderName,Message | ConvertTo-Json -Depth 5 | Set-Content "$out/$variant-crash-events.json"
