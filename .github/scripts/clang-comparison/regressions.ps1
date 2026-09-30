@@ -1,10 +1,13 @@
 param([string]$Mode)
 . "$PSScriptRoot/common.ps1"
 $root = $env:GITHUB_WORKSPACE
-$tests = if ($env:VALIDATION_TEST_FILES) { @($env:VALIDATION_TEST_FILES | ConvertFrom-Json) } else { @('tests','Zend/tests','sapi','ext') }
+[string[]]$tests = if ($env:VALIDATION_TEST_FILES) { @($env:VALIDATION_TEST_FILES | ConvertFrom-Json) } else { @('tests','Zend/tests','sapi','ext') }
 $out = New-Item "$root/regressions" -ItemType Directory -Force
 foreach ($variant in @('msvc','clang')) {
     $runtime = Expand-Runtime $variant
+    if ($variant -eq 'msvc' -and ($tests -contains 'ext/pdo_firebird/tests' -or $tests -contains 'ext/snmp/tests')) {
+        . "$PSScriptRoot/prepare-services.ps1" -Runtime $runtime
+    }
     $ini = Write-TestIni $runtime $Mode
     # run-tests spawns its controller workers without the parent's -c option.
     # Redirect tests execute in those workers and require COM/PDO there too.

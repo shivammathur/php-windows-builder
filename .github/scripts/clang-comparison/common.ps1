@@ -22,7 +22,8 @@ function Expand-Runtime([string]$Variant) {
 function Write-TestIni([string]$Runtime, [string]$Mode) {
     $lines = @('memory_limit=-1', ('extension_dir="{0}"' -f (Join-Path $Runtime 'ext')))
     foreach ($dll in Get-ChildItem "$Runtime/ext/php_*.dll" | Sort-Object Name) {
-        if ($dll.Name -in @('php_dl_test.dll','php_pdo_firebird.dll','php_snmp.dll','php_pdo_oci.dll') -or $dll.Name -like 'php_oci8*.dll') { continue }
+        if ($dll.Name -in @('php_dl_test.dll','php_pdo_oci.dll') -or $dll.Name -like 'php_oci8*.dll') { continue }
+        if (-not $env:VALIDATION_EXTERNAL_DEPS -and $dll.Name -in @('php_pdo_firebird.dll','php_snmp.dll')) { continue }
         $key = if ($dll.Name -eq 'php_opcache.dll') { 'zend_extension' } else { 'extension' }
         $lines += "$key=$($dll.Name)"
     }
