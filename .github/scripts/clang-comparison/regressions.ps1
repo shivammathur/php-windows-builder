@@ -8,7 +8,7 @@ foreach ($variant in @('msvc','clang')) {
     # Match php-src CI's SSL configuration setup for both architectures.
     $env:OPENSSL_CONF = Join-Path $runtime 'extras/ssl/openssl.cnf'
     $env:OPENSSL_MODULES = Join-Path $runtime 'extras/ssl'
-    if ($variant -eq 'msvc' -and ($tests -contains 'ext' -or $tests -contains 'ext/pdo_firebird/tests' -or $tests -contains 'ext/snmp/tests')) {
+    if ($variant -eq 'msvc' -and ($env:VALIDATION_DATABASE_SERVICES -eq 'true' -or $tests -contains 'ext' -or $tests -contains 'ext/pdo_firebird/tests' -or $tests -contains 'ext/snmp/tests')) {
         . "$PSScriptRoot/prepare-services.ps1" -Runtime $runtime
     }
     $ini = Write-TestIni $runtime $Mode

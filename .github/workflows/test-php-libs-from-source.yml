@@ -176,6 +176,8 @@ jobs:
     env:
       REUSE_SOURCE_REF: ${{ inputs.reuse-source-ref }}
       VALIDATION_TEST_FILES: ${{ inputs.test-files }}
+      PHP_BUILD_CRT: vs18
+      VALIDATION_DATABASE_SERVICES: ${{ inputs.test-files == '' || contains(inputs.test-files, 'ext/pdo_odbc') || contains(inputs.test-files, 'ext/odbc') || contains(inputs.test-files, 'ext/mysqli') || contains(inputs.test-files, 'ext/pdo_mysql') || contains(inputs.test-files, 'ext/pgsql') || contains(inputs.test-files, 'ext/pdo_pgsql') }}
     steps:
       - uses: actions/checkout@v6
       - shell: pwsh
@@ -197,6 +199,9 @@ jobs:
           path: input/clang
           run-id: ${{ inputs.build-run || github.run_id }}
           github-token: ${{ github.token }}
+      - name: Prepare php-src database services
+        if: env.VALIDATION_DATABASE_SERVICES == 'true'
+        uses: ./source/.github/actions/setup-windows
       - name: Run identical PHP test suites for both compilers
         shell: pwsh
         run: ./.github/scripts/clang-comparison/regressions.ps1 -Mode '${{ matrix.mode }}'

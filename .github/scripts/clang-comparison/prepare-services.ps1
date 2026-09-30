@@ -4,6 +4,29 @@ $root = $env:GITHUB_WORKSPACE
 $metadata = Get-Content "$root/input/msvc/metadata.json" -Raw | ConvertFrom-Json
 $arch = $metadata.arch
 $qa = New-Item "$root/qa-services" -ItemType Directory -Force
+$credentials = @{}
+if ($env:VALIDATION_DATABASE_SERVICES -eq 'true') {
+    $env:MYSQL_PWD = $env:MYSQL_TEST_PASSWD = $env:PDO_MYSQL_TEST_PASS = 'Password12!'
+    $env:MYSQL_TEST_USER = $env:PDO_MYSQL_TEST_USER = 'root'
+    $env:MYSQL_TEST_HOST = $env:PDO_MYSQL_TEST_HOST = '127.0.0.1'
+    $env:MYSQL_TEST_PORT = $env:PDO_MYSQL_TEST_PORT = '3306'
+    $env:PDO_MYSQL_TEST_DSN = 'mysql:host=127.0.0.1;port=3306;dbname=test'
+    & mysql --host=127.0.0.1 --port=3306 --user=root -e 'CREATE DATABASE IF NOT EXISTS test'
+    if ($LASTEXITCODE -ne 0) { throw 'MySQL test database setup failed' }
+    $env:PGUSER = 'postgres'
+    $env:PGPASSWORD = 'Password12!'
+    $env:PGSQL_TEST_CONNSTR = 'host=127.0.0.1 dbname=test port=5432 user=postgres password=Password12!'
+    $env:PDO_PGSQL_TEST_DSN = 'pgsql:host=127.0.0.1 port=5432 dbname=test user=postgres password=Password12!'
+    & "$env:PGBIN/createdb.exe" test
+    if ($LASTEXITCODE -ne 0) { throw 'PostgreSQL test database setup failed' }
+    $env:ODBC_TEST_USER = $env:PDO_ODBC_TEST_USER = 'sa'
+    $env:ODBC_TEST_PASS = $env:PDO_ODBC_TEST_PASS = 'Password12!'
+    $env:ODBC_TEST_DSN = 'Driver={ODBC Driver 17 for SQL Server};Server=(local)\SQLEXPRESS;Database=master;uid=sa;pwd=Password12!'
+    $env:PDO_ODBC_TEST_DSN = "odbc:$env:ODBC_TEST_DSN"
+    $credentials.mysql = @{user='root';password='Password12!';dsn=$env:PDO_MYSQL_TEST_DSN}
+    $credentials.postgresql = @{user='postgres';password='Password12!';dsn=$env:PDO_PGSQL_TEST_DSN}
+    $credentials.sqlserver = @{user='sa';password='Password12!';dsn=$env:PDO_ODBC_TEST_DSN}
+}
 $platform = if ($arch -eq 'x86') { 'Win32' } else { 'x64' }
 # Use the same Firebird fixture as php-src's Windows CI.
 Invoke-WebRequest "https://github.com/FirebirdSQL/firebird/releases/download/v4.0.4/Firebird-4.0.4.3010-0-$platform.zip" -OutFile "$qa/firebird.zip"
@@ -40,4 +63,6 @@ Set-Content "$qa/snmpd.conf" $config -Encoding ascii
 $server = Start-Process "$qa/snmp/bin/snmpd.exe" -ArgumentList @('-C','-c',"$qa/snmpd.conf",'-Ln') -PassThru -RedirectStandardOutput "$root/regressions/snmp-server.log" -RedirectStandardError "$root/regressions/snmp-server-errors.log"
 if ($server.WaitForExit(1000)) { throw "SNMP fixture exited: $($server.ExitCode)" }
 $env:VALIDATION_EXTERNAL_DEPS = '1'
-@{firebird=@{user='SYSDBA';password='phpfi';dsn=$env:PDO_FIREBIRD_TEST_DSN};snmp=@{pid=$server.Id;readCommunity='public';writeCommunity='private';testPassword='test1234';mibs=$env:MIBDIRS}} | ConvertTo-Json -Depth 4 | Set-Content "$root/regressions/qa-fixtures.json"
+$credentials.firebird = @{user='SYSDBA';password='phpfi';dsn=$env:PDO_FIREBIRD_TEST_DSN}
+$credentials.snmp = @{pid=$server.Id;readCommunity='public';writeCommunity='private';testPassword='test1234';mibs=$env:MIBDIRS}
+$credentials | ConvertTo-Json -Depth 4 | Set-Content "$root/regressions/qa-fixtures.json"
