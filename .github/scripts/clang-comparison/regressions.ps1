@@ -28,13 +28,16 @@ $crashKey = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps
 New-Item $crashKey -Force | Out-Null
 New-ItemProperty $crashKey -Name DumpFolder -Value "$out/crashes" -PropertyType ExpandString -Force | Out-Null
 New-ItemProperty $crashKey -Name DumpType -Value 1 -PropertyType DWord -Force | Out-Null
-foreach ($variant in @('msvc','clang')) {
+$variants = if ($env:VALIDATION_VARIANT -in @('msvc','clang')) { @($env:VALIDATION_VARIANT) } else { @('msvc','clang') }
+$fixturesPrepared = $false
+foreach ($variant in $variants) {
     $runtime = Expand-Runtime $variant
     # Match php-src CI's SSL configuration setup for both architectures.
     $env:OPENSSL_CONF = Join-Path $runtime 'extras/ssl/openssl.cnf'
     $env:OPENSSL_MODULES = Join-Path $runtime 'extras/ssl'
-    if ($variant -eq 'msvc' -and ($env:VALIDATION_DATABASE_SERVICES -eq 'true' -or $tests -contains 'ext' -or $tests -contains 'ext/pdo_firebird/tests' -or $tests -contains 'ext/snmp/tests')) {
+    if (-not $fixturesPrepared -and ($env:VALIDATION_DATABASE_SERVICES -eq 'true' -or $tests -contains 'ext' -or $tests -contains 'ext/pdo_firebird/tests' -or $tests -contains 'ext/snmp/tests')) {
         . "$PSScriptRoot/prepare-services.ps1" -Runtime $runtime
+        $fixturesPrepared = $true
     }
     & "$PSScriptRoot/start-snmp.ps1" -Runtime $runtime -Variant $variant
     $ini = Write-TestIni $runtime $Mode
@@ -80,7 +83,8 @@ foreach ($variant in @('msvc','clang')) {
     $process = Start-Process cmd.exe -ArgumentList @('/d','/c',('"' + $launcher + '"')) -NoNewWindow -PassThru
     $deadline = [DateTime]::UtcNow.AddMinutes(90)
     while (-not $process.WaitForExit(60000)) {
-        Write-Host "$variant $Mode tests still running; log: $out/$variant.log"
+        $progress = @(Get-Content "$out/$variant-results.txt" -ErrorAction SilentlyContinue)
+        Write-Host "$variant $Mode tests: $($progress.Count) completed; latest: $($progress | Select-Object -Last 1)"
         if ([DateTime]::UtcNow -ge $deadline) {
             & taskkill /PID $process.Id /T /F
             throw "$variant regression controller exceeded 90 minutes"

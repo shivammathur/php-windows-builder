@@ -170,12 +170,13 @@ jobs:
     needs: build
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(inputs.test-matrix || (inputs.test-arch == 'x64' && '{"arch":["x64"],"ts":["nts","ts"],"mode":["nocache","jit"]}') || (inputs.test-arch == 'x86' && '{"arch":["x86"],"ts":["nts","ts"],"mode":["nocache","jit"]}') || '{"arch":["x64","x86"],"ts":["nts","ts"],"mode":["nocache","jit"]}') }}
+      matrix: ${{ fromJSON(inputs.test-matrix || (inputs.test-arch == 'x64' && '{"arch":["x64"],"ts":["nts","ts"],"mode":["nocache","jit"],"variant":["msvc","clang"]}') || (inputs.test-arch == 'x86' && '{"arch":["x86"],"ts":["nts","ts"],"mode":["nocache","jit"],"variant":["msvc","clang"]}') || '{"arch":["x64","x86"],"ts":["nts","ts"],"mode":["nocache","jit"],"variant":["msvc","clang"]}') }}
     runs-on: windows-2025-vs2026
     timeout-minutes: 240
     env:
       REUSE_SOURCE_REF: ${{ inputs.reuse-source-ref }}
       VALIDATION_TEST_FILES: ${{ inputs.test-files }}
+      VALIDATION_VARIANT: ${{ matrix.variant || 'both' }}
       PHP_BUILD_CRT: vs18
       VALIDATION_DATABASE_SERVICES: ${{ inputs.test-files == '' || contains(inputs.test-files, 'ext/pdo_odbc') || contains(inputs.test-files, 'ext/odbc') || contains(inputs.test-files, 'ext/mysqli') || contains(inputs.test-files, 'ext/pdo_mysql') || contains(inputs.test-files, 'ext/pgsql') || contains(inputs.test-files, 'ext/pdo_pgsql') }}
     steps:
@@ -213,5 +214,5 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: regressions-${{ matrix.arch }}-${{ matrix.ts }}-${{ matrix.mode }}
+          name: regressions-${{ matrix.arch }}-${{ matrix.ts }}-${{ matrix.mode }}${{ matrix.variant && format('-{0}', matrix.variant) || '' }}
           path: regressions/
