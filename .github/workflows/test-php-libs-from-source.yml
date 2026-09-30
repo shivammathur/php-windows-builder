@@ -10,7 +10,7 @@ on:
       php-src-ref:
         description: PHP source for builds and regression tests
         required: true
-        default: f2734a4117928b18fe248aa81eec9cefc0c00485
+        default: bc1cb69076c08b3d0c29a838f665a089c9420d41
       diagnose-cfg:
         description: Also capture the Clang x64 Control Flow Guard failure separately
         type: boolean
@@ -22,10 +22,10 @@ on:
         description: Reuse the eight build artifacts from a completed validation run
         required: false
       reuse-run:
-        description: Reuse MSVC and x64 Clang artifacts from this run; rebuild x86 Clang
+        description: Reuse MSVC artifacts from this run; rebuild all Clang variants
         required: false
       reuse-source-ref:
-        description: Explicit source SHA of reused builds before the Firebird include-order fix
+        description: Explicit source SHA of reused MSVC builds before Clang compilation fixes
         required: false
       run-regressions:
         description: Run the full differential PHP test suites
@@ -108,7 +108,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: ${{ fromJSON(inputs.reuse-run != '' && '["x86"]' || '["x64", "x86"]') }}
+        arch: [x64, x86]
         ts: [nts, ts]
         variant: ${{ fromJSON(inputs.reuse-run != '' && '["clang"]' || '["msvc", "clang"]') }}
     runs-on: windows-2025-vs2026
@@ -170,7 +170,7 @@ jobs:
         with:
           name: build-clang-${{ matrix.arch }}-${{ matrix.ts }}
           path: input/clang
-          run-id: ${{ (matrix.arch == 'x64' && inputs.reuse-run) || inputs.build-run || github.run_id }}
+          run-id: ${{ inputs.build-run || github.run_id }}
           github-token: ${{ github.token }}
       - name: Compare archives and benchmark on the same machine
         shell: pwsh
@@ -212,7 +212,7 @@ jobs:
         with:
           name: build-clang-${{ matrix.arch }}-${{ matrix.ts }}
           path: input/clang
-          run-id: ${{ (matrix.arch == 'x64' && inputs.reuse-run) || inputs.build-run || github.run_id }}
+          run-id: ${{ inputs.build-run || github.run_id }}
           github-token: ${{ github.token }}
       - name: Run identical PHP test suites for both compilers
         shell: pwsh

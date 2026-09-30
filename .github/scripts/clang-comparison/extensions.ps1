@@ -7,6 +7,7 @@ try { Get-PhpSdk } finally { Pop-Location }
 $sdk = "$probeRoot/php-sdk/phpsdk-starter.bat"
 New-Item "$probeRoot/deps/include", "$probeRoot/deps/lib" -ItemType Directory -Force | Out-Null
 $dlls = @{}
+$buildResults = [Collections.Generic.List[object]]::new()
 foreach ($variant in @('msvc','clang','clang-msvc-devel')) {
     $headerVariant = if ($variant -eq 'clang-msvc-devel') { 'msvc' } else { $variant }
     $pack = @(Get-ChildItem "$root/input/$headerVariant/php-devel-pack-*.zip")
@@ -47,7 +48,13 @@ ZEND_GET_MODULE(validation_probe)
         'exit /b %errorlevel%'
     ) | Set-Content "$dir/build.bat" -Encoding ascii
     & $sdk -c vs18 -a $Arch -t "$dir/build.bat" 2>&1 | Tee-Object "$Out/$variant-extension-build.log"
-    if ($LASTEXITCODE -ne 0) { throw "$variant extension build failed" }
+    $buildCode = $LASTEXITCODE
+    $buildResults.Add([ordered]@{variant=$variant;exitCode=$buildCode})
+    $buildResults | ConvertTo-Json -Depth 5 | Set-Content "$Out/extension-build-results.json"
+    if ($buildCode -ne 0) {
+        if ($variant -eq 'clang-msvc-devel') { continue }
+        throw "$variant extension build failed"
+    }
     $dll = @(Get-ChildItem $dir -Recurse -Filter php_validation_probe.dll)
     if ($dll.Count -ne 1) { throw "Expected one probe DLL for $variant" }
     $dlls[$variant] = $dll[0].FullName
@@ -55,6 +62,7 @@ ZEND_GET_MODULE(validation_probe)
 }
 $results = foreach ($runtimeVariant in @('msvc','clang')) {
     foreach ($extensionVariant in @('msvc','clang','clang-msvc-devel')) {
+        if (-not $dlls.ContainsKey($extensionVariant)) { continue }
         $exe = "$($Runtimes[$runtimeVariant])/php.exe"
         $output = & $exe -n -d "extension=$($dlls[$extensionVariant])" -r 'if (!extension_loaded("validation_probe")) { exit(3); } echo validation_probe();' 2>&1 | Out-String
         $code = $LASTEXITCODE

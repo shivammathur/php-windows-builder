@@ -6,12 +6,12 @@ function Expand-Runtime([string]$Variant) {
     if ($LASTEXITCODE -ne 0) { throw 'Cannot identify test source' }
     if ($metadata.source -ne $expectedSource) {
         if (-not $env:REUSE_SOURCE_REF -or $metadata.source -ne $env:REUSE_SOURCE_REF) { throw "$Variant artifact source does not match the test source" }
-        # The only permitted reuse difference is the x86 Clang Firebird header
-        # compile fix. All PHP behavior and test files must remain identical.
+        # Reuse only MSVC baselines across the Clang-only TLS and Firebird
+        # compilation fixes. Clang artifacts must match the tested source.
         & git -C "$env:GITHUB_WORKSPACE/source" fetch --no-tags --depth=1 origin $metadata.source
         if ($LASTEXITCODE -ne 0) { throw 'Cannot fetch reused source for verification' }
         $changed = @(& git -C "$env:GITHUB_WORKSPACE/source" diff --name-only $metadata.source $expectedSource)
-        if ($LASTEXITCODE -ne 0 -or $changed.Count -ne 1 -or $changed[0] -ne 'ext/pdo_firebird/pdo_firebird_utils.h') { throw 'Reused artifact has unapproved source differences' }
+        if ($LASTEXITCODE -ne 0 -or $Variant -ne 'msvc' -or @($changed | Where-Object { $_ -notin @('ext/pdo_firebird/pdo_firebird_utils.h', 'TSRM/TSRM.h') }).Count) { throw 'Reused artifact has unapproved source differences' }
     }
     $zips = @(Get-ChildItem $artifactRoot -Filter '*.zip' -Recurse | Where-Object { $_.Name -match '^php-.+-(?:nts-)?Win32-(?:vs\d+|clang)-(?:x64|x86)\.zip$' -and $_.Name -notmatch '^php-(debug|devel|test)-pack-' })
     if ($zips.Count -ne 1) { throw "Expected one $Variant runtime; found $($zips.Count)" }
