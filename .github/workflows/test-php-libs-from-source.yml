@@ -31,9 +31,11 @@ on:
         description: Run the full differential PHP test suites
         type: boolean
         default: true
-      libs-build-runs:
-        description: Optional dependency builds
-        required: false
+      test-arch:
+        description: Architectures to compare and test when reusing artifacts
+        type: choice
+        options: [both, x64, x86]
+        default: both
       sbom:
         type: choice
         options: ['true', 'false']
@@ -129,7 +131,6 @@ jobs:
         shell: pwsh
         env:
           SBOM: ${{ inputs.sbom }}
-          LIBS_BUILD_RUNS: ${{ inputs.libs-build-runs }}
           GITHUB_TOKEN: ${{ github.token }}
           PHP_BUILD_PROVIDER: The PHP Group
         run: ./harness/.github/scripts/clang-comparison/build.ps1 -Variant '${{ matrix.variant }}' -Arch '${{ matrix.arch }}' -Ts '${{ matrix.ts }}'
@@ -145,7 +146,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x64, x86]
+        arch: ${{ fromJSON(inputs.test-arch == 'x64' && '["x64"]' || inputs.test-arch == 'x86' && '["x86"]' || '["x64", "x86"]') }}
         ts: [nts, ts]
     runs-on: windows-2025-vs2026
     timeout-minutes: 90
@@ -184,7 +185,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x64, x86]
+        arch: ${{ fromJSON(inputs.test-arch == 'x64' && '["x64"]' || inputs.test-arch == 'x86' && '["x86"]' || '["x64", "x86"]') }}
         ts: [nts, ts]
         mode: [nocache, jit]
     runs-on: windows-2025-vs2026
