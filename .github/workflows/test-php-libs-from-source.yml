@@ -10,7 +10,7 @@ on:
       php-src-ref:
         description: Identical PHP source for both compilers
         required: true
-        default: 749b2eb6375
+        default: 749b2eb6375700b76cac3cd8d4f3563eb178b765
       libs-build-runs:
         description: Optional dependency builds
         required: false
