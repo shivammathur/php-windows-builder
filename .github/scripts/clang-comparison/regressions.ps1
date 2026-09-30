@@ -4,6 +4,20 @@ $root = $env:GITHUB_WORKSPACE
 [string[]]$tests = if ($env:VALIDATION_TEST_FILES) { @($env:VALIDATION_TEST_FILES | ConvertFrom-Json) } else { @('tests','Zend/tests','sapi','ext') }
 $out = New-Item "$root/regressions" -ItemType Directory -Force
 $started = Get-Date
+$env:VALIDATION_CONTROLLER_DIAGNOSTICS = "$out/controller-diagnostics"
+New-Item $env:VALIDATION_CONTROLLER_DIAGNOSTICS -ItemType Directory -Force | Out-Null
+$runnerSource = Get-Content "$root/source/run-tests.php" -Raw
+$oldWorkerExit = @'
+                    kill_children($workerProcs);
+                    error("Worker $i died unexpectedly");
+'@
+$newWorkerExit = @'
+                    $workerStatus = proc_get_status($workerProcs[$i]);
+                    kill_children($workerProcs);
+                    error("Worker $i died unexpectedly: " . json_encode($workerStatus));
+'@
+if (-not $runnerSource.Contains($oldWorkerExit)) { throw 'Cannot instrument worker exit status' }
+Set-Content "$root/source/diagnostic-run-tests.php" $runnerSource.Replace($oldWorkerExit, $newWorkerExit) -Encoding utf8NoBOM
 $crashKey = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\php.exe'
 New-Item $crashKey -Force | Out-Null
 New-ItemProperty $crashKey -Name DumpFolder -Value "$out/crashes" -PropertyType ExpandString -Force | Out-Null
@@ -23,7 +37,7 @@ foreach ($variant in @('msvc','clang')) {
     $controllerIni = Write-TestIni $runtime 'nocache'
     Copy-Item $controllerIni "$runtime/controller.ini" -Force
     $controllerIni = "$runtime/controller.ini"
-    Add-Content $controllerIni @('log_errors=1', ('error_log="{0}"' -f "$out/$variant-controller-errors.log"))
+    Add-Content $controllerIni @('log_errors=1', ('error_log="{0}"' -f "$out/$variant-controller-errors.log"), ('auto_prepend_file="{0}"' -f "$PSScriptRoot/diagnostic-controller.php"))
     Copy-Item $controllerIni "$runtime/php.ini" -Force
     $env:PHPRC = $controllerIni
     & "$runtime/php.exe" -r 'echo json_encode(["ini"=>php_ini_loaded_file(),"com"=>class_exists("COM"),"pdo"=>class_exists("PDO")]); if (!class_exists("COM") || !class_exists("PDO")) { exit(1); }' | Set-Content "$out/$variant-controller.json"
@@ -52,7 +66,7 @@ foreach ($variant in @('msvc','clang')) {
     }
     # Redirect to a file in cmd, so a test's surviving child cannot hold open
     # PowerShell's native output pipe after run-tests has printed its summary.
-    $arguments = @('-n','-c',$controllerIni,'run-tests.php','-p',$env:TEST_PHP_EXECUTABLE,'-n','-c',$ini,'-q','--offline','--no-progress','--show-diff','--set-timeout','90','-j4','-g','FAIL,BORK,WARN,LEAK','-W',"$out/$variant-results.txt") + $tests
+    $arguments = @('-n','-c',$controllerIni,'diagnostic-run-tests.php','-p',$env:TEST_PHP_EXECUTABLE,'-n','-c',$ini,'-q','--offline','--no-progress','--show-diff','--set-timeout','90','-j4','-g','FAIL,BORK,WARN,LEAK','-W',"$out/$variant-results.txt") + $tests
     $command = '"' + $env:TEST_PHP_EXECUTABLE + '" ' + (($arguments | ForEach-Object { '"' + $_ + '"' }) -join ' ') + ' > "' + "$out/$variant.log" + '" 2>&1'
     $launcher = Join-Path $out "$variant-tests.cmd"
     Set-Content $launcher "@echo off`r`n$command`r`nexit /b %errorlevel%" -Encoding ascii
@@ -84,6 +98,6 @@ foreach ($variant in @('msvc','clang')) {
     [xml]$junit = Get-Content $env:TEST_PHP_JUNIT -Raw
     if ($junit.SelectNodes('//testcase').Count -eq 0) { throw "$variant JUnit report contains no tests" }
     # Restore generated test files before the second compiler's run.
-    git clean -fdx
+    git clean -fdx -e diagnostic-run-tests.php
     if ($LASTEXITCODE -ne 0) { throw 'Failed to clean isolated test source' }
 }
