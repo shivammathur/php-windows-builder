@@ -10,7 +10,7 @@ on:
       php-src-ref:
         description: PHP source for builds and regression tests
         required: true
-        default: 7f3ea98f6d6ff78672912601fa7198928ef900b2
+        default: 93eee7a971c3b66b62ac68c8fdc6e27783ade413
       test-matrix:
         description: Optional regression matrix JSON for targeted reruns
         required: false
