@@ -56,6 +56,12 @@ jobs:
         with:
           python-version: '3.10'
           architecture: ${{ startsWith(matrix.label, 'x86') && 'x86' || 'x64' }}
+      - uses: actions/checkout@v6
+        if: ${{ endsWith(matrix.label, '-manifest') }}
+        with:
+          repository: ${{ inputs.php-src-repository }}
+          ref: ${{ inputs.php-src-ref }}
+          path: source
       - uses: actions/download-artifact@v8
         with:
           name: ${{ matrix.artifact }}
@@ -67,6 +73,8 @@ jobs:
         run: |
           if ('${{ matrix.label }}' -eq 'x64-profile') {
             ./.github/scripts/clang-comparison/probe-profile-modules.ps1
+          } elseif ('${{ matrix.label }}'.EndsWith('-manifest')) {
+            ./.github/scripts/clang-comparison/diagnose-manifest.ps1
           } else {
             ./.github/scripts/clang-comparison/diagnose-cfg.ps1 -Kind '${{ matrix.label }}'
           }
