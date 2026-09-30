@@ -36,7 +36,7 @@ foreach ($probe in $probes) {
     $code = $LASTEXITCODE
     "exit=$code" | Add-Content "$out/$($probe.name).txt"
     if ($code -ne 0) {
-        & $lldb --batch --no-lldbinit -o run -k 'image list' -k 'thread backtrace all' -k 'register read' -k 'disassemble --frame' -- $exe @arguments 2>&1 | Set-Content "$out/$($probe.name)-backtrace.txt"
+        & $lldb --batch --no-lldbinit -o run -k 'image list' -k 'thread backtrace all' -k 'register read' -k 'disassemble --frame' -k 'memory read --format x --size 8 --count 40 $rsp' -k 'image lookup --address `*(unsigned long long*)$rsp`' -k 'disassemble --start-address `*(unsigned long long*)$rsp-32` --count 32' -- $exe @arguments 2>&1 | Set-Content "$out/$($probe.name)-backtrace.txt"
     }
 }
 if ($Kind -eq 'x64-cfg') {
