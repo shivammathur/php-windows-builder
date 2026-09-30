@@ -33,6 +33,9 @@ foreach ($variant in @('msvc','clang')) {
     $env:REPORT_EXIT_STATUS = '1'
     $env:SKIP_IO_CAPTURE_TESTS = '1'
     Set-Location "$root/source"
+    if ($tests -contains 'ext/com_dotnet/tests') {
+        & "$PSScriptRoot/prepare-comtest.ps1" -Variant $variant
+    }
     & $env:TEST_PHP_EXECUTABLE -n -c $controllerIni run-tests.php -p $env:TEST_PHP_EXECUTABLE -n -c $ini -q --offline --no-progress --show-diff --set-timeout 90 -j4 -g FAIL,BORK,WARN,LEAK @tests 2>&1 | Tee-Object "$out/$variant.log"
     $testExit = $LASTEXITCODE
     [ordered]@{variant=$variant; mode=$Mode;exitCode=$testExit;source=(& git rev-parse HEAD)} | ConvertTo-Json | Set-Content "$out/$variant-status.json"
