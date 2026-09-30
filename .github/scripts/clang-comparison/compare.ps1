@@ -82,3 +82,4 @@ foreach ($mode in @('nocache','opcache','jit')) {
 }
 
 & "$PSScriptRoot/extensions.ps1" -Arch $Arch -Ts $Ts -Runtimes $runtime -Out $out
+if ($Ts -eq 'ts') { & "$PSScriptRoot/apache.ps1" -Arch $Arch -Runtimes $runtime -Out $out }
