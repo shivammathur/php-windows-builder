@@ -15,6 +15,9 @@ on:
         description: Also capture the Clang x64 Control Flow Guard failure separately
         type: boolean
         default: false
+      diagnose-runtime-run:
+        description: Only debug retained runtimes (JSON array of run, artifact, label)
+        required: false
       build-run:
         description: Reuse the eight build artifacts from a completed validation run
         required: false
@@ -39,6 +42,33 @@ permissions:
   contents: read
   actions: read
 jobs:
+  trace-cfg:
+    if: ${{ inputs.diagnose-runtime-run != '' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(inputs.diagnose-runtime-run || '[{"run":"0","artifact":"unused","label":"unused"}]') }}
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ matrix.artifact }}
+          path: input
+          run-id: ${{ matrix.run }}
+          github-token: ${{ github.token }}
+      - name: Trace the failure and check CFG causality
+        shell: pwsh
+        run: ./.github/scripts/clang-comparison/diagnose-cfg.ps1 -Kind '${{ matrix.label }}'
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: runtime-analysis-${{ matrix.label }}
+          path: diagnostics/
   diagnose-cfg:
     if: ${{ inputs.diagnose-cfg }}
     runs-on: windows-2025-vs2026
@@ -71,7 +101,7 @@ jobs:
           name: cfg-diagnostics
           path: results/
   build:
-    if: ${{ inputs.build-run == '' }}
+    if: ${{ inputs.build-run == '' && inputs.diagnose-runtime-run == '' }}
     strategy:
       fail-fast: false
       matrix:
