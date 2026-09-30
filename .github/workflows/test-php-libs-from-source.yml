@@ -57,6 +57,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.10'
+          architecture: ${{ startsWith(matrix.label, 'x86') && 'x86' || 'x64' }}
       - uses: actions/download-artifact@v8
         with:
           name: ${{ matrix.artifact }}

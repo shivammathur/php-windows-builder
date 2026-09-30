@@ -9,10 +9,24 @@ $template = Get-ChildItem "$root/input/sdk-diagnostics" -Recurse -Filter "php-8.
 $ini = (Get-Content $template.FullName -Raw).Replace('PHP_SDK_PGO_PHP_EXTENSION_DIR', $runtime).Replace('PHP_SDK_PGO_PHP_ERROR_LOG', "$out/php-errors.log")
 $ini | Set-Content "$out/pgo.ini"
 $lldb = (Get-Command lldb.exe).Source
+if ($meta.arch -eq 'x86') {
+    # The x64 LLDB build reports the WOW64 host context instead of the faulting
+    # x86 context. Use the matching native debugger and Python architecture.
+    $toolsDir = New-Item "$root/debugger-x86" -ItemType Directory -Force
+    $installer = "$toolsDir/LLVM-20.1.8-win32.exe"
+    Invoke-WebRequest 'https://github.com/llvm/llvm-project/releases/download/llvmorg-20.1.8/LLVM-20.1.8-win32.exe' -OutFile $installer
+    if ((Get-FileHash $installer -Algorithm SHA256).Hash -ne '430b5c04252c9ff195a8993ae1c2ff2b73a14f42067f44cfe8f6db73232313cd') {
+        throw 'LLVM debugger installer checksum mismatch'
+    }
+    & 7z e $installer 'bin/lldb.exe' 'bin/liblldb.dll' 'bin/lldb-server.exe' "-o$toolsDir" -y
+    if ($LASTEXITCODE -ne 0) { throw 'Failed to extract x86 debugger' }
+    $lldb = "$toolsDir/lldb.exe"
+}
 & $lldb --version 2>&1 | Set-Content "$out/debugger-version.txt"
 $probes = @(
     @{name='cli-no-extensions';exe='php.exe';args=@('-n',"$out/probe.php")},
     @{name='cli-pgo-ini';exe='php.exe';args=@('-n','-c',"$out/pgo.ini","$out/probe.php")},
+    @{name='cgi-no-extensions';exe='php-cgi.exe';args=@('-n','-d','cgi.force_redirect=0','-f',"$out/probe.php")},
     @{name='cgi-pgo-ini';exe='php-cgi.exe';args=@('-n','-c',"$out/pgo.ini",'-d','cgi.force_redirect=0','-f',"$out/probe.php")}
 )
 foreach ($probe in $probes) {
@@ -22,7 +36,7 @@ foreach ($probe in $probes) {
     $code = $LASTEXITCODE
     "exit=$code" | Add-Content "$out/$($probe.name).txt"
     if ($code -ne 0) {
-        & $lldb --batch --no-lldbinit -o run -k 'thread backtrace all' -k 'register read' -k 'disassemble --frame' -- $exe @arguments 2>&1 | Set-Content "$out/$($probe.name)-backtrace.txt"
+        & $lldb --batch --no-lldbinit -o run -k 'image list' -k 'thread backtrace all' -k 'register read' -k 'disassemble --frame' -- $exe @arguments 2>&1 | Set-Content "$out/$($probe.name)-backtrace.txt"
     }
 }
 if ($Kind -eq 'x64-cfg') {
