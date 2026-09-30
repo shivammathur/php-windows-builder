@@ -10,7 +10,7 @@ on:
       php-src-ref:
         description: Identical PHP source for both compilers
         required: true
-        default: 1eb6a2ab7f1621775496a65d23ae5f64b6c46197
+        default: 5228e4b5d13f42d22ce43b0392d79e428c60d485
       build-run:
         description: Reuse the eight build artifacts from a completed validation run
         required: false

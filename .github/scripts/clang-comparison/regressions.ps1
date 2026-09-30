@@ -13,7 +13,7 @@ foreach ($variant in @('msvc','clang')) {
     $env:REPORT_EXIT_STATUS = '1'
     $env:SKIP_IO_CAPTURE_TESTS = '1'
     Set-Location "$root/source"
-    & $env:TEST_PHP_EXECUTABLE -n run-tests.php -p $env:TEST_PHP_EXECUTABLE -n -c $ini -q --offline --no-progress --show-diff --set-timeout 90 -j4 -g FAIL,BORK,WARN,LEAK tests Zend/tests sapi/cgi/tests sapi/cli/tests ext 2>&1 | Tee-Object "$out/$variant.log"
+    & $env:TEST_PHP_EXECUTABLE -n run-tests.php -p $env:TEST_PHP_EXECUTABLE -n -c $ini -q --offline --no-progress --show-diff --set-timeout 90 -j4 -g FAIL,BORK,WARN,LEAK tests Zend/tests sapi ext 2>&1 | Tee-Object "$out/$variant.log"
     $testExit = $LASTEXITCODE
     [ordered]@{variant=$variant; mode=$Mode;exitCode=$testExit;source=(& git rev-parse HEAD)} | ConvertTo-Json | Set-Content "$out/$variant-status.json"
     if (-not (Test-Path $env:TEST_PHP_JUNIT)) { throw "$variant failed to generate JUnit results" }

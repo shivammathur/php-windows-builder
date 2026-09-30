@@ -7,8 +7,9 @@ try { Get-PhpSdk } finally { Pop-Location }
 $sdk = "$probeRoot/php-sdk/phpsdk-starter.bat"
 New-Item "$probeRoot/deps/include", "$probeRoot/deps/lib" -ItemType Directory -Force | Out-Null
 $dlls = @{}
-foreach ($variant in @('msvc','clang')) {
-    $pack = @(Get-ChildItem "$root/input/$variant/php-devel-pack-*.zip")
+foreach ($variant in @('msvc','clang','clang-msvc-devel')) {
+    $headerVariant = if ($variant -eq 'clang-msvc-devel') { 'msvc' } else { $variant }
+    $pack = @(Get-ChildItem "$root/input/$headerVariant/php-devel-pack-*.zip")
     if ($pack.Count -ne 1) { throw "Expected one devel pack for $variant" }
     $dir = New-Item "$probeRoot/$variant" -ItemType Directory -Force
     Expand-Archive $pack[0] "$dir/devel"
@@ -23,7 +24,7 @@ if (PHP_VALIDATION_PROBE != "no") {
 #include "php.h"
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_validation_probe, 0, 0, IS_STRING, 0)
 ZEND_END_ARG_INFO()
-PHP_FUNCTION(validation_probe) { RETURN_STRING("extension ABI probe passed"); }
+PHP_FUNCTION(validation_probe) { RETURN_STRING("extension ABI probe passed: compiler=" PHP_COMPILER_ID ", vm=" ZEND_TOSTR(ZEND_VM_KIND)); }
 static const zend_function_entry probe_functions[] = {
     PHP_FE(validation_probe, arginfo_validation_probe)
     PHP_FE_END
@@ -34,13 +35,13 @@ zend_module_entry validation_probe_module_entry = {
 };
 ZEND_GET_MODULE(validation_probe)
 '@ | Set-Content "$dir/validation_probe.c"
-    $toolset = if ($variant -eq 'clang') { 'clang' } else { 'vs' }
+    $toolset = if ($variant -like 'clang*') { 'clang' } else { 'vs' }
     @(
         '@echo on',
         ('cd /d "{0}"' -f $dir),
         ('call "{0}\phpize.bat"' -f $dev),
         'if errorlevel 1 exit /b 1',
-        ('call configure --enable-validation-probe --with-toolset={0} --with-php-build="{1}\deps" --with-prefix="{2}" --with-mp=disable' -f $toolset,$probeRoot,$Runtimes[$variant]),
+        ('call configure --enable-validation-probe --with-toolset={0} --with-php-build="{1}\deps" --with-prefix="{2}" --with-mp=disable' -f $toolset,$probeRoot,$Runtimes[$headerVariant]),
         'if errorlevel 1 exit /b 2',
         'nmake /nologo',
         'exit /b %errorlevel%'
@@ -53,7 +54,7 @@ ZEND_GET_MODULE(validation_probe)
     Copy-Item $dll[0].FullName "$Out/$variant-php_validation_probe.dll"
 }
 $results = foreach ($runtimeVariant in @('msvc','clang')) {
-    foreach ($extensionVariant in @('msvc','clang')) {
+    foreach ($extensionVariant in @('msvc','clang','clang-msvc-devel')) {
         $exe = "$($Runtimes[$runtimeVariant])/php.exe"
         $output = & $exe -n -d "extension=$($dlls[$extensionVariant])" -r 'if (!extension_loaded("validation_probe")) { exit(3); } echo validation_probe();' 2>&1 | Out-String
         $code = $LASTEXITCODE
