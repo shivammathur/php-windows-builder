@@ -11,7 +11,7 @@ function Expand-Runtime([string]$Variant) {
         & git -C "$env:GITHUB_WORKSPACE/source" fetch --no-tags --depth=1 origin $metadata.source
         if ($LASTEXITCODE -ne 0) { throw 'Cannot fetch reused source for verification' }
         $changed = @(& git -C "$env:GITHUB_WORKSPACE/source" diff --name-only $metadata.source $expectedSource)
-        if ($LASTEXITCODE -ne 0 -or $Variant -ne 'msvc' -or @($changed | Where-Object { $_ -notin @('ext/pdo_firebird/pdo_firebird_utils.h', 'TSRM/TSRM.h', 'win32/build/confutils.js') }).Count) { throw 'Reused artifact has unapproved source differences' }
+        if ($LASTEXITCODE -ne 0 -or $Variant -ne 'msvc' -or @($changed | Where-Object { $_ -notin @('ext/pdo_firebird/pdo_firebird_utils.h', 'TSRM/TSRM.h', 'win32/build/confutils.js', 'Zend/tests/vm_kind_tailcall_clang_windows.phpt') }).Count) { throw 'Reused artifact has unapproved source differences' }
     }
     $zips = @(Get-ChildItem $artifactRoot -Filter '*.zip' -Recurse | Where-Object { $_.Name -match '^php-.+-(?:nts-)?Win32-(?:vs\d+|clang)-(?:x64|x86)\.zip$' -and $_.Name -notmatch '^php-(debug|devel|test)-pack-' })
     if ($zips.Count -ne 1) { throw "Expected one $Variant runtime; found $($zips.Count)" }
