@@ -8,9 +8,9 @@ on:
         required: true
         default: shivammathur/php-src
       php-src-ref:
-        description: Identical PHP source for both compilers
+        description: PHP source for builds and regression tests
         required: true
-        default: e1ccbc09bc873174734c535012c95b696bf04f3b
+        default: f2734a4117928b18fe248aa81eec9cefc0c00485
       diagnose-cfg:
         description: Also capture the Clang x64 Control Flow Guard failure separately
         type: boolean
@@ -20,6 +20,9 @@ on:
         required: false
       reuse-run:
         description: Reuse MSVC and x64 Clang artifacts from this run; rebuild x86 Clang
+        required: false
+      reuse-source-ref:
+        description: Explicit source SHA of reused builds before the Firebird include-order fix
         required: false
       run-regressions:
         description: Run the full differential PHP test suites
@@ -116,6 +119,8 @@ jobs:
         ts: [nts, ts]
     runs-on: windows-2025-vs2026
     timeout-minutes: 90
+    env:
+      REUSE_SOURCE_REF: ${{ inputs.reuse-source-ref }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/checkout@v6
@@ -154,6 +159,8 @@ jobs:
         mode: [nocache, jit]
     runs-on: windows-2025-vs2026
     timeout-minutes: 240
+    env:
+      REUSE_SOURCE_REF: ${{ inputs.reuse-source-ref }}
     steps:
       - uses: actions/checkout@v6
       - shell: pwsh
