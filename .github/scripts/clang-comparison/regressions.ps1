@@ -11,6 +11,9 @@ foreach ($variant in @('msvc','clang')) {
     # Keep JIT on the tested programs; the test controllers use plain CLI.
     $controllerIni = Write-TestIni $runtime 'nocache'
     Copy-Item $controllerIni "$runtime/php.ini" -Force
+    $env:PHPRC = $controllerIni
+    & "$runtime/php.exe" -r 'echo json_encode(["ini"=>php_ini_loaded_file(),"com"=>class_exists("COM"),"pdo"=>class_exists("PDO")]); if (!class_exists("COM") || !class_exists("PDO")) { exit(1); }' | Set-Content "$out/$variant-controller.json"
+    if ($LASTEXITCODE -ne 0) { throw "$variant controller dependencies are unavailable" }
     # This generated helper is absent from a source checkout and is needed by
     # proc_open_cmd.phpt. Test the helper shipped by each compiler's test pack.
     $testPack = @(Get-ChildItem "$root/input/$variant/php-test-pack-*.zip")
