@@ -10,7 +10,7 @@ on:
       php-src-ref:
         description: PHP source for builds and regression tests
         required: true
-        default: bc1cb69076c08b3d0c29a838f665a089c9420d41
+        default: 246c0d7d28079de9450b09782f4af8a645ab77cc
       diagnose-cfg:
         description: Also capture the Clang x64 Control Flow Guard failure separately
         type: boolean
