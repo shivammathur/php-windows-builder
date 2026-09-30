@@ -4,6 +4,7 @@ from pathlib import Path, PurePosixPath
 import re
 import struct
 import sys
+import xml.etree.ElementTree as ET
 import zipfile
 
 import pefile
@@ -48,6 +49,18 @@ with zipfile.ZipFile(runtime) as archive, zipfile.ZipFile(debug) as symbols:
             'imports': sorted(entry.dll.decode() for entry in getattr(pe, 'DIRECTORY_ENTRY_IMPORT', [])),
             'debug': [],
         }
+        manifests = []
+        for resource in getattr(getattr(pe, 'DIRECTORY_ENTRY_RESOURCE', None), 'entries', []):
+            if resource.id != 24:
+                continue
+            for entry in resource.directory.entries:
+                for language in entry.directory.entries:
+                    data = language.data.struct
+                    manifests.append(ET.fromstring(pe.get_data(data.OffsetToData, data.Size)))
+        binary['windows10_manifest'] = any(e.attrib.get('Id', '').lower() == '{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}' for m in manifests for e in m.iter())
+        binary['long_path_aware'] = any(e.tag.endswith('longPathAware') and e.text == 'true' for m in manifests for e in m.iter())
+        if PurePosixPath(name).name.startswith('php') and not (binary['windows10_manifest'] and binary['long_path_aware']):
+            errors.append(f'{name}: PHP application manifest is missing')
         for entry in getattr(pe, 'DIRECTORY_ENTRY_DEBUG', []):
             if entry.struct.Type != 2:
                 continue
