@@ -5,6 +5,9 @@ $out = New-Item "$root/regressions" -ItemType Directory -Force
 foreach ($variant in @('msvc','clang')) {
     $runtime = Expand-Runtime $variant
     $ini = Write-TestIni $runtime $Mode
+    # run-tests spawns its controller workers without the parent's -c option.
+    # Redirect tests execute in those workers and require COM/PDO there too.
+    Copy-Item $ini "$runtime/php.ini" -Force
     # This generated helper is absent from a source checkout and is needed by
     # proc_open_cmd.phpt. Test the helper shipped by each compiler's test pack.
     $testPack = @(Get-ChildItem "$root/input/$variant/php-test-pack-*.zip")
@@ -24,10 +27,12 @@ foreach ($variant in @('msvc','clang')) {
     $env:REPORT_EXIT_STATUS = '1'
     $env:SKIP_IO_CAPTURE_TESTS = '1'
     Set-Location "$root/source"
-    & $env:TEST_PHP_EXECUTABLE -n run-tests.php -p $env:TEST_PHP_EXECUTABLE -n -c $ini -q --offline --no-progress --show-diff --set-timeout 90 -j4 -g FAIL,BORK,WARN,LEAK tests Zend/tests sapi ext 2>&1 | Tee-Object "$out/$variant.log"
+    & $env:TEST_PHP_EXECUTABLE -n -c $ini run-tests.php -p $env:TEST_PHP_EXECUTABLE -n -c $ini -q --offline --no-progress --show-diff --set-timeout 90 -j4 -g FAIL,BORK,WARN,LEAK tests Zend/tests sapi ext 2>&1 | Tee-Object "$out/$variant.log"
     $testExit = $LASTEXITCODE
     [ordered]@{variant=$variant; mode=$Mode;exitCode=$testExit;source=(& git rev-parse HEAD)} | ConvertTo-Json | Set-Content "$out/$variant-status.json"
-    if (-not (Test-Path $env:TEST_PHP_JUNIT)) { throw "$variant failed to generate JUnit results" }
+    if (-not (Test-Path $env:TEST_PHP_JUNIT) -or (Get-Item $env:TEST_PHP_JUNIT).Length -eq 0) { throw "$variant test runner terminated without JUnit results" }
+    [xml]$junit = Get-Content $env:TEST_PHP_JUNIT -Raw
+    if ($junit.SelectNodes('//testcase').Count -eq 0) { throw "$variant JUnit report contains no tests" }
     $failures = Get-ChildItem -Path . -Recurse -File -Include '*.diff','*.out','*.exp','*.log' | Where-Object { $_.FullName -notmatch '\.git[\\/]' }
     $dest = New-Item "$out/$variant-failures" -ItemType Directory -Force
     foreach ($file in $failures) {

@@ -22,12 +22,12 @@ function Expand-Runtime([string]$Variant) {
 function Write-TestIni([string]$Runtime, [string]$Mode) {
     $lines = @('memory_limit=-1', ('extension_dir="{0}"' -f (Join-Path $Runtime 'ext')))
     foreach ($dll in Get-ChildItem "$Runtime/ext/php_*.dll" | Sort-Object Name) {
-        if ($dll.Name -in @('php_pdo_firebird.dll','php_snmp.dll','php_pdo_oci.dll') -or $dll.Name -like 'php_oci8*.dll') { continue }
+        if ($dll.Name -in @('php_dl_test.dll','php_pdo_firebird.dll','php_snmp.dll','php_pdo_oci.dll') -or $dll.Name -like 'php_oci8*.dll') { continue }
         $key = if ($dll.Name -eq 'php_opcache.dll') { 'zend_extension' } else { 'extension' }
         $lines += "$key=$($dll.Name)"
     }
     $enabled = if ($Mode -eq 'nocache') { 0 } else { 1 }
-    $lines += @("opcache.enable=$enabled", "opcache.enable_cli=$enabled", 'opcache.memory_consumption=256', 'opcache.interned_strings_buffer=16')
+    $lines += @('opcache.enable=1', "opcache.enable_cli=$enabled", 'opcache.memory_consumption=256', 'opcache.interned_strings_buffer=16')
     if ($Mode -eq 'jit') { $lines += @('opcache.jit=tracing','opcache.jit_buffer_size=64M') } else { $lines += @('opcache.jit=disable','opcache.jit_buffer_size=0') }
     $ini = "$Runtime/$Mode.ini"
     $lines | Set-Content $ini
