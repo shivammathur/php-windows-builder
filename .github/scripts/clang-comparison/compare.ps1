@@ -11,6 +11,8 @@ $dumpbin = (Get-ChildItem "$vs/VC/Tools/MSVC/*/bin/Hostx64/x64/dumpbin.exe" | So
 $metadata = [ordered]@{arch=$Arch; ts=$Ts; image=$env:ImageVersion; cpu=(Get-CimInstance Win32_Processor | Select-Object Name,NumberOfCores,NumberOfLogicalProcessors); os=(Get-CimInstance Win32_OperatingSystem | Select-Object Caption,Version); variants=@{}}
 foreach ($variant in @('msvc','clang')) {
     $runtime[$variant] = Expand-Runtime $variant
+    & python "$PSScriptRoot/inspect-artifacts.py" "$root/input/$variant" > "$out/$variant-artifact-checks.json"
+    if ($LASTEXITCODE -ne 0) { throw "$variant artifact debug/SBOM validation failed" }
     Invoke-PhpSmokeTests -ArtifactsDirectory "$root/input/$variant" -Arch $Arch -Ts $Ts 2>&1 | Tee-Object "$out/$variant-smoke.log"
     $metadata.variants[$variant] = Get-Content "$root/input/$variant/metadata.json" -Raw | ConvertFrom-Json
     foreach ($zip in Get-ChildItem "$root/input/$variant/*.zip") {
