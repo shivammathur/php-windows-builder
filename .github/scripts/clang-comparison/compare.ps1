@@ -46,6 +46,12 @@ foreach ($mode in @('nocache','opcache','jit')) {
     $inis=@{}
     foreach ($variant in @('msvc','clang')) { $inis[$variant] = Write-TestIni $runtime[$variant] $mode }
     foreach ($workload in @('integer_calls','objects','arrays','json','strings_regex','hash','zend_bench')) {
+        $repeats = 1
+        if ($workload -ne 'zend_bench') {
+            $calibration = & "$($runtime['msvc'])/php.exe" -n -c $inis['msvc'] "$PSScriptRoot/bench.php" $workload | ConvertFrom-Json
+            if ($LASTEXITCODE -ne 0) { throw "Calibration failed: $workload" }
+            $repeats = [Math]::Min(1000, [Math]::Max(1, [Math]::Ceiling(0.75 / $calibration.seconds)))
+        }
         for ($round=0; $round -le 7; $round++) {
             $order = if ($round % 2 -eq 0) { @('msvc','clang') } else { @('clang','msvc') }
             foreach ($variant in $order) {
@@ -56,12 +62,12 @@ foreach ($mode in @('nocache','opcache','jit')) {
                     $row = [pscustomobject]@{seconds=$watch.Elapsed.TotalSeconds; checksum='timed Zend/bench.php'}
                     $output | Set-Content "$out/$variant-$mode-zend-bench-last.txt"
                 } else {
-                    $output = & $exe -n -c $inis[$variant] "$PSScriptRoot/bench.php" $workload 2>&1
+                    $output = & $exe -n -c $inis[$variant] "$PSScriptRoot/bench.php" $workload $repeats 2>&1
                     $row = $output | ConvertFrom-Json
                 }
                 if ($LASTEXITCODE -ne 0) { throw "$variant $mode $workload failed: $output" }
                 if ($round -gt 0) {
-                    $results.Add([ordered]@{variant=$variant;mode=$mode;workload=$workload;round=$round;seconds=$row.seconds;checksum=$row.checksum})
+                    $results.Add([ordered]@{variant=$variant;mode=$mode;workload=$workload;round=$round;repeats=$repeats;seconds=$row.seconds;checksum=$row.checksum})
                     $results | ConvertTo-Json -Depth 5 | Set-Content "$out/benchmarks.json"
                 }
             }

@@ -10,7 +10,14 @@ on:
       php-src-ref:
         description: Identical PHP source for both compilers
         required: true
-        default: 749b2eb6375700b76cac3cd8d4f3563eb178b765
+        default: 15ca4fb6c34196b58bfe723d305883ea984e18cc
+      build-run:
+        description: Reuse the eight build artifacts from a completed validation run
+        required: false
+      run-regressions:
+        description: Run the full differential PHP test suites
+        type: boolean
+        default: true
       libs-build-runs:
         description: Optional dependency builds
         required: false
@@ -20,8 +27,10 @@ on:
         default: 'true'
 permissions:
   contents: read
+  actions: read
 jobs:
   build:
+    if: ${{ inputs.build-run == '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -60,6 +69,7 @@ jobs:
           path: results/
           retention-days: 14
   compare:
+    if: ${{ !cancelled() && (needs.build.result == 'success' || inputs.build-run != '') }}
     needs: build
     strategy:
       fail-fast: false
@@ -79,10 +89,14 @@ jobs:
         with:
           name: build-msvc-${{ matrix.arch }}-${{ matrix.ts }}
           path: input/msvc
+          run-id: ${{ inputs.build-run || github.run_id }}
+          github-token: ${{ github.token }}
       - uses: actions/download-artifact@v8
         with:
           name: build-clang-${{ matrix.arch }}-${{ matrix.ts }}
           path: input/clang
+          run-id: ${{ inputs.build-run || github.run_id }}
+          github-token: ${{ github.token }}
       - name: Compare archives and benchmark on the same machine
         shell: pwsh
         run: ./.github/scripts/clang-comparison/compare.ps1 -Arch '${{ matrix.arch }}' -Ts '${{ matrix.ts }}'
@@ -92,6 +106,7 @@ jobs:
           name: comparison-${{ matrix.arch }}-${{ matrix.ts }}
           path: comparison/
   regressions:
+    if: ${{ !cancelled() && inputs.run-regressions && (needs.build.result == 'success' || inputs.build-run != '') }}
     needs: build
     strategy:
       fail-fast: false
@@ -114,10 +129,14 @@ jobs:
         with:
           name: build-msvc-${{ matrix.arch }}-${{ matrix.ts }}
           path: input/msvc
+          run-id: ${{ inputs.build-run || github.run_id }}
+          github-token: ${{ github.token }}
       - uses: actions/download-artifact@v8
         with:
           name: build-clang-${{ matrix.arch }}-${{ matrix.ts }}
           path: input/clang
+          run-id: ${{ inputs.build-run || github.run_id }}
+          github-token: ${{ github.token }}
       - name: Run identical PHP test suites for both compilers
         shell: pwsh
         run: ./.github/scripts/clang-comparison/regressions.ps1 -Mode '${{ matrix.mode }}'

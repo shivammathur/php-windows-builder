@@ -7,7 +7,15 @@ function Set-ClangPgoSdk {
     $fcgiPath = Join-Path $SdkDirectory 'lib/php/libsdk/SDK/Build/PGO/PHP/FCGI.php'
     $fcgi = Get-Content $fcgiPath -Raw
     $old = '$env[$k] = $v;'
-    $new = '$env[$k] = ($k === "PHP_FCGI_MAX_REQUESTS" && getenv($k) !== false) ? getenv($k) : $v;'
+    $new = @'
+if ($k === "PHP_FCGI_CHILDREN" && getenv("LLVM_PROFILE_FILE")) {
+                // One worker must serve all requests and exit; the CGI parent
+                // otherwise respawns eight workers and never flushes normally.
+                $env[$k] = 0;
+            } else {
+                $env[$k] = ($k === "PHP_FCGI_MAX_REQUESTS" && getenv($k) !== false) ? getenv($k) : $v;
+            }
+'@
     if (-not $fcgi.Contains($old)) { throw 'Unexpected SDK FCGI environment implementation' }
     $fcgi = $fcgi.Replace($old, $new)
     $old = 'exec("taskkill /f /im php-cgi.exe >nul 2>&1");'

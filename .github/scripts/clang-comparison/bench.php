@@ -9,5 +9,7 @@ $tests = [
     'strings_regex' => static function () { $s=str_repeat('The quick brown fox jumps over 123 lazy dogs. ',40); $v=0; for($i=0;$i<30000;$i++){ $t=preg_replace('/\b([a-z]+)\s+(\d+)/i','$2:$1',$s); $v+=strlen(str_replace('fox','PHP',$t)); } return $v; },
     'hash' => static function () { $s=str_repeat('php-windows-builder',100); for($i=0;$i<40000;$i++) $s=hash('sha256',$s,true).substr($s,32); return bin2hex(substr($s,0,32)); },
 ];
-$name=$argv[1]; $start=hrtime(true); $result=$tests[$name](); $seconds=(hrtime(true)-$start)/1e9;
+$name=$argv[1]; $repeat=max(1,(int)($argv[2] ?? 1)); $start=hrtime(true);
+for ($r=0; $r<$repeat; $r++) $result=$tests[$name]();
+$seconds=(hrtime(true)-$start)/1e9/$repeat;
 echo json_encode(['name'=>$name,'seconds'=>$seconds,'checksum'=>hash('sha256',serialize($result))],JSON_THROW_ON_ERROR),"\n";
