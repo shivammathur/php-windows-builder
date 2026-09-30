@@ -49,6 +49,7 @@ function Invoke-PhpBuild {
             Add-BuildRequirements -PhpVersion $PhpVersion -Arch $Arch -FetchSrc:$fetchSrc
 
             if ($VsConfig.vs -eq 'vs18') {
+                Add-ClangProfileRuntime -Arch $Arch
                 Set-ClangPgoSdk -SdkDirectory (Join-Path $buildDirectory 'php-sdk')
             }
 

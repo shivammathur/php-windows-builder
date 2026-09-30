@@ -1,6 +1,9 @@
 $ErrorActionPreference = 'Stop'
 function Expand-Runtime([string]$Variant) {
     $artifactRoot = Join-Path $env:GITHUB_WORKSPACE "input/$Variant"
+    $metadata = Get-Content "$artifactRoot/metadata.json" -Raw | ConvertFrom-Json
+    $expectedSource = & git -C "$env:GITHUB_WORKSPACE/source" rev-parse HEAD
+    if ($LASTEXITCODE -ne 0 -or $metadata.source -ne $expectedSource) { throw "$Variant artifact source does not match the test source" }
     $zips = @(Get-ChildItem $artifactRoot -Filter '*.zip' -Recurse | Where-Object { $_.Name -match '^php-.+-(?:nts-)?Win32-(?:vs\d+|clang)-(?:x64|x86)\.zip$' -and $_.Name -notmatch '^php-(debug|devel|test)-pack-' })
     if ($zips.Count -ne 1) { throw "Expected one $Variant runtime; found $($zips.Count)" }
     $dest = Join-Path $env:GITHUB_WORKSPACE "runtime/$Variant"

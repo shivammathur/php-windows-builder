@@ -14,6 +14,9 @@ on:
       build-run:
         description: Reuse the eight build artifacts from a completed validation run
         required: false
+      reuse-run:
+        description: Reuse MSVC and x64 Clang artifacts from this run; rebuild x86 Clang
+        required: false
       run-regressions:
         description: Run the full differential PHP test suites
         type: boolean
@@ -34,9 +37,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x64, x86]
+        arch: ${{ fromJSON(inputs.reuse-run != '' && '["x86"]' || '["x64", "x86"]') }}
         ts: [nts, ts]
-        variant: [msvc, clang]
+        variant: ${{ fromJSON(inputs.reuse-run != '' && '["clang"]' || '["msvc", "clang"]') }}
     runs-on: windows-2025-vs2026
     timeout-minutes: 180
     steps:
@@ -89,13 +92,13 @@ jobs:
         with:
           name: build-msvc-${{ matrix.arch }}-${{ matrix.ts }}
           path: input/msvc
-          run-id: ${{ inputs.build-run || github.run_id }}
+          run-id: ${{ inputs.reuse-run || inputs.build-run || github.run_id }}
           github-token: ${{ github.token }}
       - uses: actions/download-artifact@v8
         with:
           name: build-clang-${{ matrix.arch }}-${{ matrix.ts }}
           path: input/clang
-          run-id: ${{ inputs.build-run || github.run_id }}
+          run-id: ${{ (matrix.arch == 'x64' && inputs.reuse-run) || inputs.build-run || github.run_id }}
           github-token: ${{ github.token }}
       - name: Compare archives and benchmark on the same machine
         shell: pwsh
@@ -129,13 +132,13 @@ jobs:
         with:
           name: build-msvc-${{ matrix.arch }}-${{ matrix.ts }}
           path: input/msvc
-          run-id: ${{ inputs.build-run || github.run_id }}
+          run-id: ${{ inputs.reuse-run || inputs.build-run || github.run_id }}
           github-token: ${{ github.token }}
       - uses: actions/download-artifact@v8
         with:
           name: build-clang-${{ matrix.arch }}-${{ matrix.ts }}
           path: input/clang
-          run-id: ${{ inputs.build-run || github.run_id }}
+          run-id: ${{ (matrix.arch == 'x64' && inputs.reuse-run) || inputs.build-run || github.run_id }}
           github-token: ${{ github.token }}
       - name: Run identical PHP test suites for both compilers
         shell: pwsh
