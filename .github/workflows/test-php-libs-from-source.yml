@@ -190,3 +190,7 @@ jobs:
           Invoke-PhpSmokeTests -ArtifactsDirectory (Join-Path $(pwd).Path 'artifacts') `
                                -Arch ${{matrix.arch}} `
                                -Ts ${{matrix.ts}}
+
+      - name: Verify libzip 1.12 and static zstd in PHP
+        shell: pwsh
+        run: .\.github\ci\check-libzip.ps1 -Arch '${{ matrix.arch }}' -Ts '${{ matrix.ts }}'
