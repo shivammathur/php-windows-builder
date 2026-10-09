@@ -70,5 +70,25 @@ foreach ($methods as $name => $method) {
         echo "$label: passed\n";
     }
 }
+if (defined('ZipArchive::AFL_WANT_TORRENTZIP')) {
+    $input = "$directory/input.bin";
+    $path = "$directory/torrent.zip";
+    foreach ([false, true] as $replace) {
+        $content = $replace ? 'replacement torrentzip payload' : 'original torrentzip payload';
+        check(file_put_contents($input, $content) === strlen($content), 'TorrentZip input write failed');
+        $zip = new ZipArchive();
+        check($zip->open($path, $replace ? 0 : ZipArchive::CREATE | ZipArchive::OVERWRITE) === true, 'TorrentZip open failed');
+        check($zip->setArchiveFlag(ZipArchive::AFL_WANT_TORRENTZIP, 1), 'TorrentZip flag setting failed');
+        check($replace ? $zip->replaceFile($input, 0) : $zip->addFile($input, 'payload.bin'), 'TorrentZip add/replace failed');
+        check($zip->close(), 'TorrentZip write failed');
+        check($zip->open($path, ZipArchive::RDONLY) === true, 'TorrentZip reopen failed');
+        check($zip->getArchiveFlag(ZipArchive::AFL_IS_TORRENTZIP) === 1, 'TorrentZip format mismatch');
+        check($zip->getFromName('payload.bin') === $content, 'TorrentZip content mismatch');
+        check($zip->close(), 'TorrentZip read close failed');
+    }
+    unlink($input);
+    unlink($path);
+    echo "torrentzip add/replace round trips: passed\n";
+}
 rmdir($directory);
 echo 'libzip ', ZipArchive::LIBZIP_VERSION, ': all 12 PHP round trips passed', PHP_EOL;
