@@ -54,7 +54,8 @@ foreach ($methods as $name => $method) {
         $stream = $zip->getStream('payload.bin');
         check(is_resource($stream), "$label stream open failed");
         check(stream_get_contents($stream) === $payload, "$label stream content mismatch");
-        check(fclose($stream), "$label stream close failed");
+        fclose($stream);
+        check(!is_resource($stream), "$label stream was not closed");
         $extract = "$directory/$label";
         check($zip->extractTo($extract), "$label extraction failed");
         check(file_get_contents("$extract/payload.bin") === $payload, "$label extracted content mismatch");

@@ -4,7 +4,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $archives = @(Get-ChildItem artifacts -Filter 'php-*.zip' | Where-Object {
-    $match = [regex]::Match($_.Name, "^php-(.+?)(-nts)?-Win32-v[sc]\d+-$Arch\.zip$")
+    $match = [regex]::Match($_.Name, "^php-(\d+\.\d+\..+?)(-nts)?-Win32-v[sc]\d+-$Arch\.zip$")
     $match.Success -and (($Ts -eq 'nts') -eq $match.Groups[2].Success)
 })
 if ($archives.Count -ne 1) { throw "Expected one PHP archive for $Arch/$Ts, found $($archives.Count)" }
@@ -22,6 +22,6 @@ if (-not $dumpbin) { throw 'dumpbin was not found' }
 $imports = & $dumpbin /DEPENDENTS (Join-Path $extensions 'php_zip.dll')
 if ($LASTEXITCODE -ne 0) { throw 'Unable to inspect php_zip.dll imports' }
 $imports | Write-Host
-if ($imports -match '(?i)(libzip|zstd|bz2|lzma|zlib).*\.dll') {
+if ($imports -match '(?i)^\s*(?:libzip|(?:lib)?zstd|(?:lib)?bz2|(?:lib)?lzma|zlib)[\w.-]*\.dll\s*$') {
     throw 'php_zip.dll unexpectedly imports a compression DLL'
 }

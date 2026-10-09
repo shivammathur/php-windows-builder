@@ -1,0 +1,74 @@
+name: Verify libzip 1.12 in existing PHP artifacts
+on:
+  push:
+    branches: [test/libzip-1.12-zstd]
+    paths:
+      - .github/ci/check-libzip.*
+      - .github/workflows/verify-libzip-artifacts.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  wait-for-builds:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for the six source builds to finish packaging
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: python
+        run: |
+          import json, subprocess, time
+          pending = {37912406360, 37912406742, 37912406374, 37912406580, 37912407277, 37912406810}
+          for attempt in range(60):
+              for run in sorted(pending):
+                  data = json.loads(subprocess.check_output(['gh', 'run', 'view', str(run), '--json', 'status,jobs,headSha']))
+                  assert data['headSha'] == '5996b857ff9982d5127546432708d2f17251c609'
+                  builds = [j for j in data['jobs'] if j['name'].startswith('php (')]
+                  merged = [j for j in data['jobs'] if j['name'] == 'artifacts']
+                  if len(builds) == 4 and merged and all(j['conclusion'] == 'success' for j in builds + merged):
+                      pending.remove(run)
+                      print(f'Build artifacts ready: {run}', flush=True)
+                  elif data['status'] == 'completed':
+                      raise RuntimeError(f'Build artifacts unavailable: {run}')
+              if not pending:
+                  break
+              time.sleep(30)
+          assert not pending, f'Timed out waiting for {pending}'
+
+  verify:
+    needs: wait-for-builds
+    strategy:
+      fail-fast: false
+      matrix:
+        build:
+          - {php: '8.2', run: 37912406360, runner: windows-2022}
+          - {php: '8.3', run: 37912406742, runner: windows-2022}
+          - {php: '8.4', run: 37912406374, runner: windows-2022}
+          - {php: '8.5', run: 37912406580, runner: windows-2022}
+          - {php: '8.6', run: 37912407277, runner: windows-2025-vs2026}
+          - {php: master, run: 37912406810, runner: windows-2025-vs2026}
+        arch: [x64, x86]
+        ts: [nts, ts]
+    name: PHP ${{ matrix.build.php }} ${{ matrix.arch }} ${{ matrix.ts }}
+    runs-on: ${{ matrix.build.runner }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
+        with:
+          name: artifacts
+          path: artifacts
+          run-id: ${{ matrix.build.run }}
+          github-token: ${{ github.token }}
+      - name: Smoke test PHP builds
+        shell: pwsh
+        run: |
+          Import-Module (Join-Path $(pwd).Path 'php/BuildPhp') -Force
+          Invoke-PhpSmokeTests -ArtifactsDirectory (Join-Path $(pwd).Path 'artifacts') `
+                               -Arch '${{ matrix.arch }}' -Ts '${{ matrix.ts }}'
+      - name: Verify libzip 1.12 and static zstd in PHP
+        shell: pwsh
+        run: .\.github\ci\check-libzip.ps1 -Arch '${{ matrix.arch }}' -Ts '${{ matrix.ts }}'
