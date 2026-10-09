@@ -48,6 +48,7 @@ jobs:
   php:
     needs: resolve-runner
     strategy:
+      fail-fast: false
       matrix:
         arch: [x64, x86]
         ts: [nts, ts]
@@ -98,6 +99,7 @@ jobs:
   tests:
     needs: [resolve-runner, artifacts]
     strategy:
+      fail-fast: false
       matrix:
         arch: [x64, x86]
         ts: [nts, ts]
@@ -161,13 +163,14 @@ jobs:
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
-        continue-on-error: true
         with:
           name: test-results-${{matrix.arch}}-${{matrix.ts}}-${{matrix.opcache}}-${{matrix.test-type}}
           path: test-${{matrix.arch}}-${{matrix.ts}}-${{matrix.opcache}}-${{matrix.test-type}}.xml
+          if-no-files-found: error
 
   smoke-tests:
     strategy:
+      fail-fast: false
       matrix:
         arch: [x64, x86]
         ts: [nts, ts]
