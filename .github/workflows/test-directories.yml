@@ -1,4 +1,4 @@
-name: Diagnose ARM64 compiler results
+name: Verify v142 ARM64 result fixes
 on: workflow_dispatch
 permissions:
   contents: read
@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: shivammathur/php-src
-          ref: fix/windows-arm64-8.2
+          ref: fix/msvc-v142-arm64-results
           path: source
       - name: Get toolset
         id: toolset
@@ -36,6 +36,11 @@ jobs:
         run: |
           Get-Command cl,link | Format-List Source
           New-Item results -ItemType Directory | Out-Null
+          $template = Get-Content source/win32/build/config.w32.h.in -Raw
+          $pragma = [regex]::Match($template, '(?s)#if defined\(_MSC_VER\)[^\r\n]*\r?\n# pragma fp_contract\(off\)\r?\n#endif').Value
+          if (-not $pragma) { throw 'Missing reviewed Windows ARM64 pragma' }
+          $probe = [IO.File]::ReadAllText('diagnostics/arm64-compiler.c')
+          [IO.File]::WriteAllText('diagnostics/arm64-compiler.c', "$pragma`n$probe")
           $cases = @(
             @{name='optimized';flags=@('/O2')},
             @{name='unoptimized';flags=@('/Od')},
@@ -47,10 +52,38 @@ jobs:
             $flags = $case.flags
             & cl /nologo /MD @flags /Isource/ext/hash/murmur diagnostics/arm64-compiler.c source/ext/hash/murmur/PMurHash.c "/Feresults/$name.exe" /link /incremental:no
             if ($LASTEXITCODE) { throw "Compile failed: $name" }
-            & "./results/$name.exe" | Tee-Object "results/$name.txt"
+            $output = & "./results/$name.exe" | Tee-Object "results/$name.txt"
             if ($LASTEXITCODE) { throw "Execution failed: $name" }
+            if ($output -notcontains 'murmur_cases=8580 murmur_failures=0' -or $output -notcontains 'range_count=7' -or $output -notcontains 'range[3]=0') { throw "Incorrect output: $name" }
           }
       - uses: actions/upload-artifact@v7
         with:
           name: compiler-${{ matrix.php }}-${{ matrix.arch }}
           path: results
+  unix:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6
+        with:
+          repository: shivammathur/php-src
+          ref: fix/msvc-v142-arm64-results
+          path: patched
+      - uses: actions/checkout@v6
+        with:
+          repository: shivammathur/php-src
+          ref: fix/windows-arm64-8.2
+          path: original
+      - name: Compare original and patched ARM64 GCC and Clang results
+        shell: bash
+        run: |
+          for compiler in gcc clang; do
+            for version in original patched; do
+              "$compiler" -O2 -ffp-contract=off -I"$version/ext/hash/murmur" diagnostics/arm64-compiler.c "$version/ext/hash/murmur/PMurHash.c" -o probe
+              ./probe > "$compiler-$version.txt"
+            done
+            diff -u "$compiler-original.txt" "$compiler-patched.txt"
+            cat "$compiler-patched.txt"
+            grep -Fx 'murmur_cases=8580 murmur_failures=0' "$compiler-patched.txt"
+            grep -Fx 'range_count=7' "$compiler-patched.txt"
+          done

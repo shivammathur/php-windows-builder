@@ -6,7 +6,12 @@
 #ifdef NO_CONTRACTION
 #pragma fp_contract(off)
 #endif
-__declspec(noinline) static void range_probe(double low, double high, double step) {
+#ifdef _MSC_VER
+__declspec(noinline)
+#else
+__attribute__((noinline))
+#endif
+static void range_probe(double low, double high, double step) {
     unsigned i, count = 0;
     double element;
     for (i = 0, element = low; i < 7 && element <= high; ++i, element = low + (i * step)) {
