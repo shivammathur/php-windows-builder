@@ -163,16 +163,33 @@ jobs:
         run: |
           Copy-Item replay/Makefile,replay/Makefile.objects .
           Copy-Item replay/main/config.w32.h main/config.w32.h
+          if ((git rev-parse HEAD) -ne 'c8a2f56964243694ce4705a3500ef4cff86a7102') { throw 'PHP source branch changed' }
           $dateConfig = [IO.File]::ReadAllText('ext/date/config.w32')
           $lines = [regex]::Matches($dateConfig, 'tl_config\.WriteLine\(("(?:\\.|[^"\\])*")\);') | ForEach-Object { $_.Groups[1].Value | ConvertFrom-Json }
           if ($lines.Count -ne 10) { throw 'Unexpected timelib header generator' }
           Set-Content ext/date/lib/timelib_config.h $lines
-          $gdObjects = Get-ChildItem 'C:/a/php-windows-builder/obj/Release_TS/ext/gd' -Recurse -Filter '*.obj' | Sort-Object FullName
-          $before = $gdObjects | Get-FileHash | ConvertTo-Json
+          $out = 'C:/a/php-windows-builder/obj/Release_TS'
+          $preservedFiles = @(Get-ChildItem $out -Recurse -Filter '*.obj') + @(Get-Item "$out/php8ts.dll", "$out/php8ts.lib", "$out/php_gd.pgd")
+          $before = $preservedFiles | Sort-Object FullName | Get-FileHash | ConvertTo-Json
+          # Build only the six CLI objects and resources. The normal target traverses
+          # the core library's dependency graph and regenerates omitted parsers.
+          $makefile = [IO.File]::ReadAllText('Makefile')
+          $target = '$(BUILD_DIR)\php.exe: $(DEPS_CLI) $(CLI_GLOBAL_OBJS) $(BUILD_DIR)\$(PHPLIB) $(BUILD_DIR)\php.exe.res $(BUILD_DIR)\php.exe.manifest'
+          if ([regex]::Matches($makefile, [regex]::Escape($target)).Count -ne 1) { throw 'Unexpected CLI target' }
+          $makefile = $makefile.Replace($target, '$(BUILD_DIR)\php.exe: $(CLI_GLOBAL_OBJS) $(BUILD_DIR)\php.exe.res $(BUILD_DIR)\php.exe.manifest')
+          $makefile = $makefile.Replace('LDFLAGS_CLI=/LTCG /USEPROFILE', 'LDFLAGS_CLI=/LTCG')
+          $makefile = $makefile.Replace('/PGD:$(PGOPGD_DIR)\php.pgd $(LDFLAGS_CLI)', '$(LDFLAGS_CLI)')
+          [IO.File]::WriteAllText('Makefile', $makefile)
+          foreach ($file in 'main/config.w32.h','ext/date/lib/timelib_config.h','win32/build/php.ico','win32/build/default.manifest',"$out/resp/CLI_GLOBAL_OBJS.txt",'../deps/lib/edit_a.lib') {
+            if (-not (Test-Path $file)) { throw "Missing CLI prerequisite: $file" }
+          }
           & nmake /nologo php.exe 2>&1 | Tee-Object cli-build.log
           if ($LASTEXITCODE) { throw 'Cannot build CLI runtime harness' }
-          $after = $gdObjects | Get-FileHash | ConvertTo-Json
-          if ($before -cne $after) { throw 'GD objects changed while building CLI' }
+          $after = $preservedFiles | Sort-Object FullName | Get-FileHash | ConvertTo-Json
+          if ($before -cne $after) { throw 'Preserved objects, core or GD profile changed while building CLI' }
+          $env:PATH = "$env:VCToolsInstallDir/bin/arm64;C:/a/php-windows-builder/deps/bin;$out;$env:PATH"
+          & "$out/php.exe" -n -r 'if (PHP_VERSION !== "8.6.0-dev" || PHP_INT_SIZE !== 8 || array_sum(range(1,10000)) !== 50005000) exit(1); echo "CLI baseline passed\n";'
+          if ($LASTEXITCODE) { throw 'CLI baseline failed before GD experiment' }
 
       - name: Select controlled profile input
         shell: pwsh
@@ -198,7 +215,7 @@ jobs:
             [IO.File]::WriteAllText('probe/pgo-instrument.bat', $text.Replace('/USEPROFILE','/GENPROFILE'))
             & cmd /c (Join-Path $env:GITHUB_WORKSPACE 'probe/pgo-instrument.bat') 2>&1 | Tee-Object instrument.log
             if ($LASTEXITCODE) { throw 'Fresh instrumentation failed' }
-            & "$out/php.exe" -n -d "extension=$out/php_gd.dll" -r 'for($i=0;$i<1000;$i++){$im=imagecreatetruecolor(100,100);$c=imagecolorallocate($im,255,255,255);imagettftext($im,12,0,10,50,$c,"C:/Windows/Fonts/arial.ttf","hello &#197; &#x6C34;");imagepng($im,"NUL");}echo "GD training complete\n";' 2>&1 | Tee-Object training.log
+            & "$out/php.exe" -n -d "extension=$out/php_gd.dll" -r 'for($i=0;$i<1000;$i++){$im=imagecreatetruecolor(100,100);$c=imagecolorallocate($im,255,255,255);if (!is_array(imagettftext($im,12,0,10,50,$c,"C:/Windows/Fonts/arial.ttf","hello &#197; &#x6C34;")) || !imagepng($im,"NUL")) exit(1);imagedestroy($im);}echo "GD training complete\n";' 2>&1 | Tee-Object training.log
             if ($LASTEXITCODE) { throw 'GD training failed' }
             if (-not @(Get-ChildItem $out -Filter 'php_gd!*.pgc').Count) { throw 'No GD counters collected' }
             & pgomgr /merge $pgd | Tee-Object merge.log
@@ -220,7 +237,9 @@ jobs:
           $dll = 'C:/a/php-windows-builder/obj/Release_TS/php_gd.dll'
           & dumpbin /headers $dll | Tee-Object headers.log
           if ($LASTEXITCODE) { throw 'Invalid output DLL' }
-          & 'C:/a/php-windows-builder/obj/Release_TS/php.exe' -n -d "extension=$dll" -r 'echo PHP_VERSION, PHP_EOL; if (!extension_loaded("gd")) exit(1); $im=imagecreatetruecolor(10,10); echo imagesx($im), PHP_EOL; var_dump(imagettfbbox(12,0,"C:/Windows/Fonts/arial.ttf","hello"));'
+          $bytes = [IO.File]::ReadAllBytes($dll)
+          if ([BitConverter]::ToUInt16($bytes, [BitConverter]::ToInt32($bytes,60)+4) -ne 43620) { throw 'GD DLL is not ARM64' }
+          & 'C:/a/php-windows-builder/obj/Release_TS/php.exe' -n -d "extension=$dll" -r 'echo PHP_VERSION, PHP_EOL; if (!extension_loaded("gd")) exit(1); $im=imagecreatetruecolor(10,10); if (imagesx($im) !== 10 || !is_array(imagettfbbox(12,0,"C:/Windows/Fonts/arial.ttf","hello"))) exit(1); echo "GD runtime passed\n";'
           if ($LASTEXITCODE) { throw 'Relinked PHP cannot execute' }
 
       - uses: actions/upload-artifact@v7
