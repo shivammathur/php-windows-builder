@@ -1,13 +1,14 @@
-name: Reduce the confirmed VS18 ARM64 PGO reproducer
+name: Isolate numeric entity parsing in the VS18 ARM64 compiler failure
 on:
   workflow_dispatch:
 jobs:
   reduce:
     runs-on: windows-11-vs2026-arm
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        variant: [no-cache, no-vector, no-numeric, no-named, no-utf]
+        variant: [no-hex, no-decimal, unsigned-index, unsigned-byte, unsigned-accumulator]
     steps:
       - uses: actions/checkout@v6
       - uses: actions/checkout@v6

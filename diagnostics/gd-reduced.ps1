@@ -1,4 +1,4 @@
-param([ValidateSet('original','no-cache','no-vector','no-numeric','no-named','no-utf')][string]$Variant='original')
+param([ValidateSet('original','no-cache','no-vector','no-numeric','no-named','no-utf','no-hex','no-decimal','unsigned-index','unsigned-byte','unsigned-accumulator')][string]$Variant='original')
 $ErrorActionPreference = 'Stop'
 if ((git -C source rev-parse HEAD) -ne 'c8a2f56964243694ce4705a3500ef4cff86a7102') { throw 'Unexpected PHP source' }
 $text = [IO.File]::ReadAllText('source/ext/gd/libgd/gdft.c')
@@ -17,6 +17,16 @@ if ($Variant -eq 'no-vector') {
     $function = $function.Replace($tail, "`n            }$tail")
 } elseif ($Variant -eq 'no-utf') {
     $function = $function.Replace('if (byte < 0x', 'if (0 && byte < 0x')
+} elseif ($Variant -eq 'no-hex') {
+    $function = $function.Replace("if (byte == 'x' || byte == 'X')", "if (0 && (byte == 'x' || byte == 'X'))")
+} elseif ($Variant -eq 'no-decimal') {
+    $function = $function.Replace('for (i = 2; i < 8; i++)', 'for (i = 2; i < 2; i++)')
+} elseif ($Variant -eq 'unsigned-index') {
+    $function = $function.Replace('int i, n = 0;', 'unsigned int i; int n = 0;')
+} elseif ($Variant -eq 'unsigned-byte') {
+    $function = $function.Replace('int byte;', 'unsigned int byte;')
+} elseif ($Variant -eq 'unsigned-accumulator') {
+    $function = $function.Replace('int i, n = 0;', 'int i; unsigned int n = 0;')
 }
 $comparator = [regex]::Match($text, '(?s)static int comp_entities\([^}]+\}').Value
 if (-not $comparator) { throw 'Missing comparator' }
@@ -63,7 +73,7 @@ int main(void) {
 }
 '@
 [IO.File]::WriteAllText('reduced/gd-reduced.c', "$prefix`n$comparator`n$function`n$harness")
-if ($Variant -in 'no-numeric','no-named','no-utf') {
+if ($Variant -in 'no-numeric','no-named','no-utf','no-hex','no-decimal') {
     # Reduction cases deliberately remove behavior, solely to isolate compiler input.
     # Their optimized checksum must still equal their own non-PGO control.
     $harness = $harness.Replace('if (cp!=cases[j].cp || bytes!=cases[j].bytes)', 'if (0)')
