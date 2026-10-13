@@ -1,90 +1,56 @@
-name: Diagnose ARM64 extension test environment
+name: Review remaining ARM64 test failures against controls
 on: workflow_dispatch
 permissions:
   contents: read
   actions: read
 jobs:
-  tests:
+  controls:
     runs-on: windows-11-arm
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        php: ['8.2', '8.3', '8.4', '8.5']
+        include:
+          - {php: '8.2', arch: x64, case: files}
+          - {php: '8.2', arch: arm64, case: files}
+          - {php: '8.4', arch: x64, case: firebird4}
+          - {php: '8.4', arch: x64, case: firebird6}
+          - {php: '8.3', arch: x64, case: postgres}
+          - {php: '8.3', arch: arm64, case: postgres}
     steps:
       - uses: actions/checkout@v6
-      - name: Resolve tested build
+      - name: Resolve original build
         id: plan
         shell: pwsh
         run: |
           $p = Get-Content diagnostics/php-runs.json -Raw | ConvertFrom-Json | Where-Object php -eq '${{ matrix.php }}'
-          foreach ($key in 'version','source','run','dependencies') { "$key=$($p.$key)" >> $env:GITHUB_OUTPUT }
-          Import-Module ./php/BuildPhp -Force
-          $info = Get-DepsCacheInfo -PhpVersion $p.version -Arch arm64 -LibsBuildRuns $p.dependencies -IncludeDefaultRunsKey
-          Set-Content packages.txt ($info.Packages -join "`n")
-          "cache-key=$($info.CacheKey)" >> $env:GITHUB_OUTPUT
-          "cache-dir=$($info.CacheDir)" >> $env:GITHUB_OUTPUT
+          "run=$($p.run)" >> $env:GITHUB_OUTPUT
+          "source=$($p.source)" >> $env:GITHUB_OUTPUT
+      - uses: actions/checkout@v6
+        with:
+          repository: shivammathur/php-src
+          ref: ${{ steps.plan.outputs.source }}
+          path: source
       - uses: actions/download-artifact@v8
+        if: matrix.arch == 'arm64'
         with:
           name: artifacts
           run-id: ${{ steps.plan.outputs.run }}
           github-token: ${{ github.token }}
-      - uses: actions/cache/restore@v5
-        id: cache
-        with:
-          path: ${{ steps.plan.outputs.cache-dir }}
-          key: ${{ steps.plan.outputs.cache-key }}-${{ hashFiles('packages.txt') }}
-      - name: Install native Firebird client for remote tests
+          path: artifacts
+      - name: Compare runtime and runner behavior
         shell: pwsh
-        run: |
-          Invoke-WebRequest 'https://github.com/FirebirdSQL/snapshots/releases/download/snapshot-master/Firebird-6.0.0.2190-0-1d6051b-windows-arm64.zip' -OutFile firebird-arm64.zip
-          $hash = (Get-FileHash firebird-arm64.zip).Hash
-          if ($hash -ne '5BB0D4B013F3BE3A03B2F56BC180A77FD6CB2777BEC34D51490A7C715AA92ADA') { throw 'Firebird client changed' }
-          Expand-Archive firebird-arm64.zip C:/Firebird-arm64
-          $bytes = [IO.File]::ReadAllBytes('C:/Firebird-arm64/fbclient.dll')
-          $offset = [BitConverter]::ToInt32($bytes, 60)
-          if ([BitConverter]::ToUInt16($bytes, $offset + 4) -ne 43620) { throw 'Firebird client is not ARM64' }
-          Get-FileHash C:/Firebird-arm64/fbclient.dll
-      - name: Select native Firebird and installed .NET runtime
-        shell: pwsh
-        run: |
-          $path = 'php/BuildPhp/private/Set-PhpExtTestEnvironment.ps1'
-          $code = [IO.File]::ReadAllText($path)
-          $needle = '            & $setup.Command @parameters'
-          if (-not $code.Contains($needle)) { throw 'Missing setup hook' }
-          $replacement = @'
-                      & $setup.Command @parameters
-                      if ($Arch -eq 'arm64' -and $setup.Command -eq 'Set-FirebirdTestEnvironment') {
-                          Add-Path 'C:/Firebird-arm64'
-                      }
-          '@
-          [IO.File]::WriteAllText($path, $code.Replace($needle, $replacement))
-          git diff -- $path
-          $ini = 'php/BuildPhp/private/Set-PhpIniForTests.ps1'
-          $code = [IO.File]::ReadAllText($ini)
-          $needle = '        Copy-Item $ini $testIni -Force'
-          if (-not $code.Contains($needle)) { throw 'Missing test INI hook' }
-          [IO.File]::WriteAllText($ini, $code.Replace($needle, "$needle`n        if (`$Arch -eq 'arm64') { Add-Content `$testIni 'com.dotnet_version=v4.0.30319' }"))
-          git diff -- $ini
-      - name: Inspect native .NET runtime availability
-        shell: pwsh
-        run: |
-          Get-ChildItem 'HKLM:/SOFTWARE/Microsoft/NET Framework Setup/NDP/v4/Full' -ErrorAction SilentlyContinue | Get-ItemProperty
-          Get-ItemProperty 'HKLM:/SOFTWARE/Microsoft/NET Framework Setup/NDP/v4/Full' -ErrorAction SilentlyContinue | Format-List Version,Release,Install
-          Get-ChildItem C:/Windows/Microsoft.NET -Filter clr.dll -Recurse -ErrorAction SilentlyContinue | Select-Object FullName,Length
-      - name: Run affected extension tests with original binaries
-        shell: pwsh
-        env:
-          DEPS_DIR: ${{ steps.plan.outputs.cache-dir }}
-          DEPS_CACHE_HIT: ${{ steps.cache.outputs.cache-hit }}
-          LIBS_BUILD_RUNS: ${{ steps.plan.outputs.dependencies }}
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          Import-Module ./php/BuildPhp -Force
-          Invoke-PhpTests -PhpVersion '${{ steps.plan.outputs.version }}' -Arch arm64 -Ts nts -Opcache nocache -TestType ext -SourceRepository shivammathur/php-src -SourceRef '${{ steps.plan.outputs.source }}' -TestDirectories @('ext/pdo_firebird/tests','ext/pdo_pgsql/tests','ext/com_dotnet/tests','ext/hash/tests','ext/standard/tests/array','ext/standard/tests/general_functions')
+        run: ./diagnostics/runtime-controls.ps1 -Php '${{ matrix.php }}' -Arch '${{ matrix.arch }}' -Case '${{ matrix.case }}'
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: extension-probe-${{ matrix.php }}
+          name: control-${{ matrix.php }}-${{ matrix.arch }}-${{ matrix.case }}
           path: |
-            test-arm64-nts-nocache-ext.xml
-            test-arm64-nts-nocache-ext.log
+            control*.json
+            control.xml
+            control.log
+            priority.log
+            client.log
+            pgsql-*.log
+            postgres-*.log
+            postgres-*.json

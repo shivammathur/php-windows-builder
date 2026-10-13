@@ -1,0 +1,65 @@
+{
+  "8.3": {
+    "version": "8.3.35",
+    "nts-vs16-x64": {
+      "mtime": "2026-09-22T17:35:04+05:30",
+      "zip": {
+        "path": "php-8.3.35-nts-Win32-vs16-x64.zip",
+        "size": "32.3MB",
+        "sha256": "25a8e2ac9ff30f1d768d1447c09a600617fa6e6082729f6e95f008b59c91fe45"
+      },
+      "debug_pack": {
+        "path": "php-debug-pack-8.3.35-nts-Win32-vs16-x64.zip",
+        "size": "31.25MB",
+        "sha256": "5538d5aa0abc06183cb2c15e7d85c62ef005629aacc628a2fbd1c320ba4dc7bb"
+      },
+      "devel_pack": {
+        "path": "php-devel-pack-8.3.35-nts-Win32-vs16-x64.zip",
+        "size": "1.26MB",
+        "sha256": "0672ec82a47a670be0a6cad546445a051665885b6e51c45b52615dce426717b8"
+      }
+    }
+  },
+  "8.2": {
+    "version": "8.2.34",
+    "nts-vs16-x64": {
+      "mtime": "2026-09-22T15:20:04+05:30",
+      "zip": {
+        "path": "php-8.2.34-nts-Win32-vs16-x64.zip",
+        "size": "31.92MB",
+        "sha256": "03249b5c9414c6dbe30276f4a7598bd9d2a7417ee81f709b06b99e9c4a2aff4f"
+      },
+      "debug_pack": {
+        "path": "php-debug-pack-8.2.34-nts-Win32-vs16-x64.zip",
+        "size": "26.61MB",
+        "sha256": "7e3372a796ba7cfab7cb6596f86bddbabfd5d6a73da3334b9cca16a479333aa0"
+      },
+      "devel_pack": {
+        "path": "php-devel-pack-8.2.34-nts-Win32-vs16-x64.zip",
+        "size": "1.24MB",
+        "sha256": "390788375f5bf7851a4f245f80d2dae46c936a3fbed15774b8e8aa10fe9d8e9f"
+      }
+    }
+  },
+  "8.4": {
+    "nts-vs17-x64": {
+      "mtime": "2026-09-22T21:20:06+05:30",
+      "zip": {
+        "path": "php-8.4.26-nts-Win32-vs17-x64.zip",
+        "size": "33.48MB",
+        "sha256": "da68394f9193b7f6b89d0c76861a4034ae10efee7fd55a7255d8118c2acf70d7"
+      },
+      "debug_pack": {
+        "path": "php-debug-pack-8.4.26-nts-Win32-vs17-x64.zip",
+        "size": "39.87MB",
+        "sha256": "80387f4d2c001b5033068a820273205e329a674f5a46e438ada4e6883a79bf72"
+      },
+      "devel_pack": {
+        "path": "php-devel-pack-8.4.26-nts-Win32-vs17-x64.zip",
+        "size": "1.35MB",
+        "sha256": "0a36ffa9a12c3a15871428aafd53ef53778d1988f21730958e9a0a2baea2a3cb"
+      }
+    },
+    "version": "8.4.26"
+  }
+}
