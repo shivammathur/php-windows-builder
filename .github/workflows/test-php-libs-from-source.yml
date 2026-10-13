@@ -1,4 +1,4 @@
-name: Isolate numeric entity parsing in the VS18 ARM64 compiler failure
+name: Test local workarounds for the isolated GD PGO compiler failure
 on:
   workflow_dispatch:
 jobs:
@@ -8,7 +8,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: [no-hex, no-decimal, unsigned-index, unsigned-byte, unsigned-accumulator]
+        variant: [volatile-index, volatile-byte, volatile-accumulator, split-exit, no-named]
     steps:
       - uses: actions/checkout@v6
       - uses: actions/checkout@v6

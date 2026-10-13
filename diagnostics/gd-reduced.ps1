@@ -1,7 +1,7 @@
-param([ValidateSet('original','no-cache','no-vector','no-numeric','no-named','no-utf','no-hex','no-decimal','unsigned-index','unsigned-byte','unsigned-accumulator')][string]$Variant='original')
+param([ValidateSet('original','no-cache','no-vector','no-numeric','no-named','no-utf','no-hex','no-decimal','unsigned-index','unsigned-byte','unsigned-accumulator','volatile-index','volatile-byte','volatile-accumulator','split-exit')][string]$Variant='original')
 $ErrorActionPreference = 'Stop'
 if ((git -C source rev-parse HEAD) -ne 'c8a2f56964243694ce4705a3500ef4cff86a7102') { throw 'Unexpected PHP source' }
-$text = [IO.File]::ReadAllText('source/ext/gd/libgd/gdft.c')
+$text = [IO.File]::ReadAllText('source/ext/gd/libgd/gdft.c').Replace("`r`n", "`n")
 $start = $text.IndexOf('#define Tcl_UniChar int')
 $end = $text.IndexOf('#ifdef HAVE_LIBRAQM', $start)
 if ($start -lt 0 -or $end -le $start) { throw 'Cannot extract original GD function' }
@@ -27,6 +27,20 @@ if ($Variant -eq 'no-vector') {
     $function = $function.Replace('int byte;', 'unsigned int byte;')
 } elseif ($Variant -eq 'unsigned-accumulator') {
     $function = $function.Replace('int i, n = 0;', 'int i; unsigned int n = 0;')
+} elseif ($Variant -eq 'volatile-index') {
+    $function = $function.Replace('int i, n = 0;', 'volatile int i; int n = 0;')
+} elseif ($Variant -eq 'volatile-byte') {
+    $function = $function.Replace('int byte;', 'volatile int byte;')
+} elseif ($Variant -eq 'volatile-accumulator') {
+    $function = $function.Replace('int i, n = 0;', 'int i; volatile int n = 0;')
+} elseif ($Variant -eq 'split-exit') {
+    $exit = "            if (byte == ';') {`n                *chPtr = (Tcl_UniChar)n;`n                return ++i;`n            }"
+    $hexEnd = "            } else {`n                for (i = 2;"
+    $decimalEnd = "            }`n`n        } else {"
+    if ([regex]::Matches($function,[regex]::Escape($exit)).Count -ne 1 -or -not $function.Contains($hexEnd)) { throw 'Numeric exit boundaries changed' }
+    $function = $function.Replace($exit,'')
+    if (-not $function.Contains($decimalEnd)) { throw 'Decimal branch boundary changed' }
+    $function = $function.Replace($hexEnd,"$exit`n$hexEnd").Replace($decimalEnd,"$exit`n$decimalEnd")
 }
 $comparator = [regex]::Match($text, '(?s)static int comp_entities\([^}]+\}').Value
 if (-not $comparator) { throw 'Missing comparator' }
