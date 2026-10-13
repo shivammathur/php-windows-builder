@@ -1,124 +1,42 @@
-name: Review missing extension coverage and PostgreSQL timeouts
+name: Diagnose ARM64 generator bailout and CGI runtime failures
 on: workflow_dispatch
 permissions:
   contents: read
   actions: read
 jobs:
-  deps:
-    runs-on: windows-11-arm
+  runtime:
+    runs-on: windows-11-vs2026-arm
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
-        php:
-          - "8.2"
-          - "8.5"
+        php: ['8.5', '8.6', master]
+        ts: [nts, ts]
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/checkout@v6
-        with:
-          ref: test/arm64-series-dependencies
-          path: builder
-      - name: Resolve dependency cache
+      - name: Select the original package and source branch
         id: plan
         shell: pwsh
         run: |
-          if ((git -C builder rev-parse HEAD) -ne '1d4e815ca5467192388eb2c89d1227522cf1e3d5') { throw 'Production test builder moved' }
-          $p = Get-Content diagnostics/php-runs.json -Raw | ConvertFrom-Json | Where-Object php -eq '${{ matrix.php }}'
-          foreach ($key in 'version','dependencies') { "$key=$($p.$key)" >> $env:GITHUB_OUTPUT }
-          Import-Module ./builder/php/BuildPhp -Force
-          $info = Get-DepsCacheInfo -PhpVersion $p.version -Arch arm64 -LibsBuildRuns $p.dependencies -IncludeDefaultRunsKey
-          Set-Content packages.txt ($info.Packages -join "`n")
-          "cache-key=$($info.CacheKey)" >> $env:GITHUB_OUTPUT
-          "cache-dir=$($info.CacheDir)" >> $env:GITHUB_OUTPUT
-      - uses: actions/cache/restore@v5
-        id: cache
-        with:
-          path: ${{ steps.plan.outputs.cache-dir }}
-          key: ${{ steps.plan.outputs.cache-key }}-${{ hashFiles('packages.txt') }}
-      - name: Populate this diagnostic branch's dependency cache
-        if: steps.cache.outputs.cache-hit != 'true'
-        shell: pwsh
-        env:
-          LIBS_BUILD_RUNS: ${{ steps.plan.outputs.dependencies }}
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          $rate = Invoke-RestMethod https://api.github.com/rate_limit -Headers @{Authorization="Bearer $env:GITHUB_TOKEN"}
-          $required = 12 * @($env:LIBS_BUILD_RUNS -split ',').Count
-          if ($rate.resources.core.remaining -lt $required) {
-            $reset = [DateTimeOffset]::FromUnixTimeSeconds($rate.resources.core.reset)
-            $wait = [Math]::Max(1, [int][Math]::Ceiling(($reset - [DateTimeOffset]::UtcNow).TotalSeconds) + 5)
-            Start-Sleep -Seconds $wait
-          }
-          Import-Module ./builder/php/BuildPhp -Force
-          & (Get-Module BuildPhp) { Add-PhpDeps -PhpVersion '${{ steps.plan.outputs.version }}' -VsVersion $(if ('${{ matrix.php }}' -eq '8.2') { 'vs16' } else { 'vs17' }) -Arch arm64 -Destination '${{ steps.plan.outputs.cache-dir }}' }
-      - uses: actions/cache/save@v5
-        if: steps.cache.outputs.cache-hit != 'true'
-        with:
-          path: ${{ steps.plan.outputs.cache-dir }}
-          key: ${{ steps.cache.outputs.cache-primary-key }}
-  extensions:
-    needs: deps
-    runs-on: windows-11-arm
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - php: "8.2"
-            ts: ts
-            opcache: nocache
-            scope: postgres
-          - php: "8.5"
-            ts: nts
-            opcache: nocache
-            scope: postgres
-          - php: "8.5"
-            ts: ts
-            opcache: opcache
-            scope: coverage
-    steps:
-      - uses: actions/checkout@v6
+          $p = @(Get-Content diagnostics/core-runtime-plan.json -Raw | ConvertFrom-Json | Where-Object { $_.php -eq '${{ matrix.php }}' -and $_.ts -eq '${{ matrix.ts }}' })
+          if ($p.Count -ne 1) { throw 'Ambiguous package provenance' }
+          foreach ($key in 'source','run') { "$key=$($p[0].$key)" >> $env:GITHUB_OUTPUT }
       - uses: actions/checkout@v6
         with:
-          ref: test/arm64-series-dependencies
-          path: builder
-      - name: Resolve original package and exact dependency cache
-        id: plan
-        shell: pwsh
-        run: |
-          if ((git -C builder rev-parse HEAD) -ne '1d4e815ca5467192388eb2c89d1227522cf1e3d5') { throw 'Production test builder moved' }
-          $p = Get-Content diagnostics/php-runs.json -Raw | ConvertFrom-Json | Where-Object php -eq '${{ matrix.php }}'
-          foreach ($key in 'version','source','run','dependencies') { "$key=$($p.$key)" >> $env:GITHUB_OUTPUT }
-          Import-Module ./builder/php/BuildPhp -Force
-          $info = Get-DepsCacheInfo -PhpVersion $p.version -Arch arm64 -LibsBuildRuns $p.dependencies -IncludeDefaultRunsKey
-          Set-Content packages.txt ($info.Packages -join "`n")
-          "cache-key=$($info.CacheKey)" >> $env:GITHUB_OUTPUT
-          "cache-dir=$($info.CacheDir)" >> $env:GITHUB_OUTPUT
+          repository: shivammathur/php-src
+          ref: ${{ steps.plan.outputs.source }}
+          path: source
       - uses: actions/download-artifact@v8
         with:
           name: artifacts
           run-id: ${{ steps.plan.outputs.run }}
           github-token: ${{ github.token }}
-      - uses: actions/cache/restore@v5
-        id: cache
-        with:
-          path: ${{ steps.plan.outputs.cache-dir }}
-          key: ${{ steps.plan.outputs.cache-key }}-${{ hashFiles('packages.txt') }}
-          fail-on-cache-miss: true
-      - name: Inspect runtime failures and actual extension discovery
+          path: artifacts
+      - name: Inspect unchanged packages and collect native exception stacks
         shell: pwsh
-        env:
-          DEPS_DIR: ${{ steps.plan.outputs.cache-dir }}
-          DEPS_CACHE_HIT: ${{ steps.cache.outputs.cache-hit }}
-          LIBS_BUILD_RUNS: ${{ steps.plan.outputs.dependencies }}
-          GITHUB_TOKEN: ${{ github.token }}
-        run: ./diagnostics/runtime-review.ps1 -Php '${{ matrix.php }}' -Ts '${{ matrix.ts }}' -Opcache '${{ matrix.opcache }}' -Scope '${{ matrix.scope }}'
+        run: ./diagnostics/core-runtime.ps1 -Php '${{ matrix.php }}' -Ts '${{ matrix.ts }}'
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: runtime-review-${{ matrix.php }}-${{ matrix.ts }}-${{ matrix.opcache }}
-          path: |-
-            test-arm64-${{ matrix.ts }}-${{ matrix.opcache }}-ext.xml
-            test-arm64-${{ matrix.ts }}-${{ matrix.opcache }}-ext.log
-
-            review-*
-            extension-discovery-*.jsonl
+          name: core-runtime-${{ matrix.php }}-${{ matrix.ts }}
+          path: results
