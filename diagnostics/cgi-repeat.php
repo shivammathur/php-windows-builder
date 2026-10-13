@@ -14,7 +14,7 @@ for ($iteration = 0; $iteration < 350; $iteration++) {
         $output = ob_get_clean();
         $results[] = ['iteration' => $iteration, 'mode' => $mode, 'api' => 'passthru', 'exit' => $status, 'output' => $output];
         // shell_exec uses the same text-mode popen/read/close path, but discards the child exit status.
-        $pipe = popen($command, 'rt');
+        $pipe = popen($command, 'r');
         if (!is_resource($pipe)) throw new RuntimeException('Cannot start CGI control');
         $output = stream_get_contents($pipe);
         $status = pclose($pipe);

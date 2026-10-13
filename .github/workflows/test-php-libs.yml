@@ -1,135 +1,34 @@
-name: Build PHP with custom library builds from winlibs/winlib-builder
-run-name: Build PHP ${{ inputs.php-version }}
-on:
-  workflow_dispatch:
-    inputs:
-      php-version:
-        description: 'PHP version to build'
-        required: true
-      libs-build-runs:
-        description: 'Comma-separated list of GitHub Actions run IDs from winlibs/winlib-builder'
-        required: false
-      sbom:
-        type: choice
-        options: ['true', 'false']
-        description: Add SBOM files to binary archives
-        required: false
-        default: 'true'
-
+name: Capture CGI child exits on original ARM64 and published x64
+on: workflow_dispatch
 jobs:
-  php:
+  cgi:
+    runs-on: windows-11-vs2026-arm
+    timeout-minutes: 30
     strategy:
+      fail-fast: false
       matrix:
-        arch: [x64, x86]
-        ts: [nts, ts]
-    runs-on: ${{ (contains(inputs.php-version, 'master') || contains(inputs.php-version, '8.6') || contains(inputs.php-version, '8.7')) && 'windows-2025-vs2026' || 'windows-2022' }}
+        include:
+          - {name: original-arm64, extra: '', source: fix/windows-arm64-8.6}
+          - {name: published-x64, extra: '-PublishedX64', source: fix/windows-arm64-8.4}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Build
-        uses: ./php
+      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6
         with:
-          php-version: ${{ inputs.php-version }}
-          arch: ${{ matrix.arch }}
-          ts: ${{ matrix.ts }}
-          libs-build-runs: ${{ inputs.libs-build-runs }}
-          sbom: ${{ inputs.sbom }}
-        env:
-          PHP_BUILD_PROVIDER: "The PHP Group"
-
-  artifacts:
-    runs-on: ubuntu-latest
-    needs: php
-    outputs:
-      artifact-id: ${{ steps.artifacts.outputs.artifact-id }}
-    steps:
-      - name: Upload artifacts
-        uses: actions/upload-artifact/merge@v7
-        id: artifacts
+          repository: shivammathur/php-src
+          ref: ${{ matrix.source }}
+          path: source
+      - uses: actions/download-artifact@v8
+        if: matrix.name == 'original-arm64'
         with:
           name: artifacts
-          delete-merged: true
-  tests:
-    strategy:
-      matrix:
-        arch: [x64, x86]
-        ts: [nts, ts]
-        opcache: [opcache, nocache]
-        test-type: [php, ext]
-    runs-on: ${{ (contains(inputs.php-version, 'master') || contains(inputs.php-version, '8.6') || contains(inputs.php-version, '8.7')) && 'windows-2025-vs2026' || 'windows-2022' }}
-    needs: artifacts
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Download artifacts
-        uses: actions/download-artifact@v8
-        id: artifacts
-        with:
-          name: artifacts
-
-      - name: Get Cache Key
-        id: cache-key
-        shell: pwsh
-        run: |
-          Import-Module (Join-Path $(pwd).Path '\php\BuildPhp') -Force
-          $cacheInfo = Get-DepsCacheInfo -PhpVersion '${{inputs.php-version}}' -Arch '${{ matrix.arch }}' -LibsBuildRuns '${{ inputs.libs-build-runs }}' -IncludeDefaultRunsKey
-          Set-Content -Path packages.txt -Value ($cacheInfo.Packages -join "`n")
-          Add-Content -Value "cache-key=$($cacheInfo.CacheKey)" -Path $env:GITHUB_OUTPUT
-          Add-Content -Value "cache-dir=$($cacheInfo.CacheDir)" -Path $env:GITHUB_OUTPUT
-
-      - name: Cache Deps
-        id: cache-deps
-        uses: actions/cache@v5
-        with:
-          path: ${{ steps.cache-key.outputs.cache-dir }}
-          key: ${{ steps.cache-key.outputs.cache-key }}-${{ hashFiles('packages.txt') }}
-
-      - name: Test PHP
-        shell: pwsh
-        continue-on-error: true
-        env:
-          DEPS_DIR: ${{ steps.cache-key.outputs.cache-dir }}
-          DEPS_CACHE_HIT: ${{ steps.cache-deps.outputs.cache-hit }}
-          LIBS_BUILD_RUNS: ${{ inputs.libs-build-runs }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          Import-Module (Join-Path $(pwd).Path '\php\BuildPhp') -Force          
-          Invoke-PhpTests -PhpVersion ${{inputs.php-version}} `
-                          -Arch ${{matrix.arch}} `
-                          -Ts ${{matrix.ts}} `
-                          -Opcache ${{matrix.opcache}} `
-                          -TestType ${{matrix.test-type}}
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v7
-        continue-on-error: true
-        with:
-          name: test-results-${{matrix.arch}}-${{matrix.ts}}-${{matrix.opcache}}-${{matrix.test-type}}
-          path: test-${{matrix.arch}}-${{matrix.ts}}-${{matrix.opcache}}-${{matrix.test-type}}.xml
-
-  smoke-tests:
-    strategy:
-      matrix:
-        arch: [x64, x86]
-        ts: [nts, ts]
-    runs-on: ${{ (contains(inputs.php-version, 'master') || contains(inputs.php-version, '8.6') || contains(inputs.php-version, '8.7')) && 'windows-2025-vs2026' || 'windows-2022' }}
-    needs: [artifacts]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Download artifacts
-        uses: actions/download-artifact@v8
-        with:
-          name: artifacts
+          run-id: 38476128354
+          github-token: ${{ github.token }}
           path: artifacts
-
-      - name: Smoke test PHP builds
+      - name: Capture child exit status through the same popen path
         shell: pwsh
-        run: |
-          Import-Module (Join-Path $(pwd).Path '\php\BuildPhp') -Force
-          Invoke-PhpSmokeTests -ArtifactsDirectory (Join-Path $(pwd).Path 'artifacts') `
-                               -Arch ${{matrix.arch}} `
-                               -Ts ${{matrix.ts}}
+        run: ./diagnostics/cgi-repeat.ps1 -Php '8.6' -Ts ts ${{ matrix.extra }}
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: cgi-exits-${{ matrix.name }}
+          path: results
