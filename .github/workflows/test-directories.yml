@@ -1,164 +1,56 @@
-name: Test PHP Directories
-run-name: Test PHP ${{ inputs.php-version }} directories
-on:
-  workflow_dispatch:
-    inputs:
-      php-version:
-        description: 'PHP version to test'
-        required: true
-      test-directories:
-        description: 'Comma or newline-separated test directories'
-        required: true
-      arch:
-        type: choice
-        options: [x64, x86]
-        description: 'Architecture'
-        required: true
-        default: x64
-      ts:
-        type: choice
-        options: [nts, ts]
-        description: 'Thread safety'
-        required: true
-        default: nts
-      opcache:
-        type: choice
-        options: [nocache, opcache]
-        description: 'Opcache mode'
-        required: true
-        default: nocache
-      test-type:
-        type: choice
-        options: [ext, php]
-        description: 'Test type'
-        required: true
-        default: ext
-      php-build-run-id:
-        description: 'Optional php-windows-builder run ID containing merged artifacts'
-        required: false
-      libs-build-runs:
-        description: 'Comma-separated winlibs/winlib-builder run IDs used by the PHP build artifacts'
-        required: false
-      source-repository:
-        description: 'php-src repository to source tests from when source-ref is provided'
-        required: true
-        default: php/php-src
-      source-ref:
-        description: 'Optional branch, tag, or SHA in the php-src repository'
-        required: false
-
+name: Diagnose ARM64 compiler results
+on: workflow_dispatch
 permissions:
   contents: read
-  actions: read
-
 jobs:
-  set-matrix:
-    runs-on: ubuntu-latest
-    outputs:
-      test-matrix: ${{ steps.set-matrix.outputs.test-matrix }}
-    steps:
-      - name: Generate test directory matrix
-        id: set-matrix
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $directories = @(
-            '${{ inputs.test-directories }}' -split "[,`r`n]+" |
-              ForEach-Object { $_.Trim() } |
-              Where-Object { $_ -ne '' }
-          )
-          if ($directories.Count -eq 0) {
-            throw 'No test directories were provided.'
-          }
-
-          $include = @()
-          foreach ($directory in $directories) {
-            $name = ($directory -replace '[^A-Za-z0-9_.-]+', '-').Trim('-')
-            if ([string]::IsNullOrWhiteSpace($name)) {
-              $name = 'tests'
-            }
-            $include += [PSCustomObject]@{
-              directory = $directory
-              name = $name
-            }
-          }
-
-          $json = ConvertTo-Json @{ include = $include } -Compress -Depth 4
-          Add-Content -Path $env:GITHUB_OUTPUT -Value "test-matrix=$json"
-
-  test:
-    needs: set-matrix
-    name: ${{ inputs.php-version }} ${{ matrix.name }} ${{ inputs.arch }} ${{ inputs.ts }} ${{ inputs.opcache }}
-    runs-on: ${{ (contains(inputs.php-version, 'master') || contains(inputs.php-version, '8.6') || contains(inputs.php-version, '8.7')) && 'windows-2025-vs2026' || 'windows-2022' }}
-    timeout-minutes: 60
+  probe:
+    runs-on: windows-11-arm
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.set-matrix.outputs.test-matrix) }}
+      matrix:
+        include:
+          - {php: '8.2', arch: arm64, host: amd64_arm64, sdk: '10.0.22621.0'}
+          - {php: '8.4', arch: arm64, host: arm64, sdk: '10.0.22621.0'}
+          - {php: '8.2', arch: x64, host: x64, sdk: '10.0.22621.0'}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Download PHP build artifacts
-        if: ${{ inputs.php-build-run-id != '' }}
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RUN_ID: ${{ inputs.php-build-run-id }}
-        run: |
-          $ErrorActionPreference = 'Stop'
-          gh run download $env:RUN_ID `
-            -R $env:GITHUB_REPOSITORY `
-            -n artifacts `
-            -D .
-          Get-ChildItem -Filter '*.zip' | Sort-Object Name | Select-Object Name, Length
-
-      - name: Get Cache Key
-        id: cache-key
-        shell: pwsh
-        run: |
-          Import-Module (Join-Path $(pwd).Path '\php\BuildPhp') -Force
-          $cacheInfo = Get-DepsCacheInfo `
-            -PhpVersion '${{ inputs.php-version }}' `
-            -Arch '${{ inputs.arch }}' `
-            -LibsBuildRuns '${{ inputs.libs-build-runs }}' `
-            -IncludeDefaultRunsKey
-          Set-Content -Path packages.txt -Value ($cacheInfo.Packages -join "`n")
-          Add-Content -Value "cache-key=$($cacheInfo.CacheKey)" -Path $env:GITHUB_OUTPUT
-          Add-Content -Value "cache-dir=$($cacheInfo.CacheDir)" -Path $env:GITHUB_OUTPUT
-
-      - name: Cache Deps
-        id: cache-deps
-        uses: actions/cache@v5
+      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6
         with:
-          path: ${{ steps.cache-key.outputs.cache-dir }}
-          key: ${{ steps.cache-key.outputs.cache-key }}-${{ hashFiles('packages.txt') }}
-
-      - name: Run tests
+          repository: shivammathur/php-src
+          ref: fix/windows-arm64-8.2
+          path: source
+      - name: Get toolset
+        id: toolset
         shell: pwsh
-        env:
-          DEPS_DIR: ${{ steps.cache-key.outputs.cache-dir }}
-          DEPS_CACHE_HIT: ${{ steps.cache-deps.outputs.cache-hit }}
-          LIBS_BUILD_RUNS: ${{ inputs.libs-build-runs }}
-          GITHUB_TOKEN: ${{ github.token }}
         run: |
-          Import-Module (Join-Path $(pwd).Path '\php\BuildPhp') -Force
-          Invoke-PhpTests -PhpVersion '${{ inputs.php-version }}' `
-                          -Arch '${{ inputs.arch }}' `
-                          -Ts '${{ inputs.ts }}' `
-                          -Opcache '${{ inputs.opcache }}' `
-                          -TestType '${{ inputs.test-type }}' `
-                          -SourceRepository '${{ inputs.source-repository }}' `
-                          -SourceRef '${{ inputs.source-ref }}' `
-                          -TestDirectories '${{ matrix.directory }}' `
-                          -FailOnError
-
-      - name: Upload test results
-        if: always()
-        continue-on-error: true
-        uses: actions/upload-artifact@v7
+          Import-Module ./php/BuildPhp -Force
+          $vs = Get-VsVersion -PhpVersion '${{ matrix.php }}' -Arch '${{ matrix.arch }}'
+          "version=$($vs.toolset)" >> $env:GITHUB_OUTPUT
+      - uses: ilammy/msvc-dev-cmd@v1
         with:
-          name: test-results-${{ inputs.php-version }}-${{ matrix.name }}-${{ inputs.arch }}-${{ inputs.ts }}-${{ inputs.opcache }}
-          path: |
-            test-${{ inputs.arch }}-${{ inputs.ts }}-${{ inputs.opcache }}-${{ inputs.test-type }}.xml
-            test-${{ inputs.arch }}-${{ inputs.ts }}-${{ inputs.opcache }}-${{ inputs.test-type }}.log
-          if-no-files-found: ignore
+          arch: ${{ matrix.host }}
+          toolset: ${{ steps.toolset.outputs.version }}
+          sdk: ${{ matrix.sdk }}
+      - name: Compare compiler modes
+        shell: pwsh
+        run: |
+          Get-Command cl,link | Format-List Source
+          New-Item results -ItemType Directory | Out-Null
+          $cases = @(
+            @{name='optimized';flags=@('/O2')},
+            @{name='unoptimized';flags=@('/Od')},
+            @{name='unaligned';flags=@('/O2','/DUNALIGNED_SAFE')},
+            @{name='no-contraction';flags=@('/O2','/DNO_CONTRACTION')}
+          )
+          foreach ($case in $cases) {
+            $name = $case.name
+            $flags = $case.flags
+            & cl /nologo /MD @flags /Isource/ext/hash/murmur diagnostics/arm64-compiler.c source/ext/hash/murmur/PMurHash.c "/Feresults/$name.exe" /link /incremental:no
+            if ($LASTEXITCODE) { throw "Compile failed: $name" }
+            & "./results/$name.exe" | Tee-Object "results/$name.txt"
+            if ($LASTEXITCODE) { throw "Execution failed: $name" }
+          }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: compiler-${{ matrix.php }}-${{ matrix.arch }}
+          path: results
