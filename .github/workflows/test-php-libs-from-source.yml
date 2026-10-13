@@ -1,262 +1,87 @@
-name: Build PHP with custom library builds from winlibs/winlib-builder (source)
-run-name: Build PHP from source ${{ inputs.php-src-ref }}
-on:
-  workflow_dispatch:
-    inputs:
-      php-src-repository:
-        description: 'php-src repository to source builds and tests from'
-        required: true
-      php-src-ref:
-        description: 'Branch, tag, or SHA in the php-src repository to source builds and tests from'
-        required: true
-      libs-build-runs:
-        description: 'Comma-separated list of GitHub Actions run IDs from winlibs/winlib-builder'
-        required: false
-      sbom:
-        type: choice
-        options: ['true', 'false']
-        description: Add SBOM files to binary archives
-        required: false
-        default: 'true'
-
+name: ARM64 PGO environment probe
+on: workflow_dispatch
 jobs:
-  resolve-runner:
-    runs-on: ubuntu-latest
-    outputs:
-      runner: ${{ steps.resolve.outputs.runner }}
-      version: ${{ steps.resolve.outputs.version }}
-    steps:
-      - name: Checkout PHP source
-        uses: actions/checkout@v6
-        with:
-          repository: ${{ inputs.php-src-repository }}
-          ref: ${{ inputs.php-src-ref }}
-          token: ${{ secrets.GITHUB_TOKEN }}
-          path: php-src
-          fetch-depth: 1
-          sparse-checkout: main/php_version.h
-          sparse-checkout-cone-mode: false
-
-      - name: Resolve runner
-        id: resolve
-        shell: bash
-        run: |
-          read -r major minor < <(awk '/^#define PHP_(MAJOR|MINOR)_VERSION/ { v[++i]=$3 } END { print v[1], v[2] }' php-src/main/php_version.h)
-          runner="$([ "$major" -gt 8 ] || { [ "$major" -eq 8 ] && [ "$minor" -ge 6 ]; } && echo windows-11-vs2026-arm || echo windows-11-arm)"
-          echo "PHP source version: $major.$minor; runner: $runner"
-          echo "runner=$runner" >> "$GITHUB_OUTPUT"
-          echo "version=$(awk '/^#define PHP_VERSION / { gsub(/"/, "", $3); print $3 }' php-src/main/php_version.h)" >> "$GITHUB_OUTPUT"
-
-  deps:
-    needs: resolve-runner
-    runs-on: ${{ needs.resolve-runner.outputs.runner }}
-    outputs:
-      cache-dir: ${{ steps.cache-key.outputs.cache-dir }}
-      cache-key: ${{ steps.restore.outputs.cache-primary-key }}
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - php: '8.2'
+            runner: windows-11-arm
+            sdk: '10.0.22621.0'
+            host: amd64_arm64
+          - php: '8.4'
+            runner: windows-11-arm
+            sdk: ''
+            host: arm64
+          - php: '8.6'
+            runner: windows-11-vs2026-arm
+            sdk: ''
+            host: arm64
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
-
-      - name: Get dependency cache key
-        id: cache-key
+      - name: Resolve toolset
+        id: vs
         shell: pwsh
         run: |
           Import-Module ./php/BuildPhp -Force
-          $info = Get-DepsCacheInfo -PhpVersion '${{ needs.resolve-runner.outputs.version }}' -Arch arm64 -LibsBuildRuns '${{ inputs.libs-build-runs }}' -IncludeDefaultRunsKey
-          Set-Content packages.txt ($info.Packages -join "`n")
-          Add-Content $env:GITHUB_OUTPUT "cache-key=$($info.CacheKey)"
-          Add-Content $env:GITHUB_OUTPUT "cache-dir=$($info.CacheDir)"
-          Add-Content $env:GITHUB_OUTPUT "vs=$($info.VsVersion)"
-
-      - name: Restore dependency cache
-        id: restore
-        uses: actions/cache/restore@v5
+          $vs = Get-VsVersion -PhpVersion '${{ matrix.php }}' -Arch arm64
+          Add-Content $env:GITHUB_OUTPUT "toolset=$($vs.toolset)"
+      - uses: ilammy/msvc-dev-cmd@v1
         with:
-          path: ${{ steps.cache-key.outputs.cache-dir }}
-          key: ${{ steps.cache-key.outputs.cache-key }}-${{ hashFiles('packages.txt') }}
-
-      - name: Download dependencies
-        if: steps.restore.outputs.cache-hit != 'true'
+          arch: ${{ matrix.host }}
+          toolset: ${{ steps.vs.outputs.toolset }}
+          sdk: ${{ matrix.sdk }}
+      - name: Inspect and run PGO tools
         shell: pwsh
-        env:
-          LIBS_BUILD_RUNS: ${{ inputs.libs-build-runs }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $rate = Invoke-RestMethod https://api.github.com/rate_limit -Headers @{Authorization="Bearer $env:GITHUB_TOKEN"}
-          $required = 12 * @('${{ inputs.libs-build-runs }}' -split ',' | Where-Object { $_ }).Count
-          if ($rate.resources.core.remaining -lt $required) {
-            $reset = [DateTimeOffset]::FromUnixTimeSeconds($rate.resources.core.reset)
-            $wait = [Math]::Max(1, [int][Math]::Ceiling(($reset - [DateTimeOffset]::UtcNow).TotalSeconds) + 5)
-            Write-Host "Waiting $wait seconds for the GitHub API quota to reset before parallel dependency downloads."
-            Start-Sleep -Seconds $wait
+          $ErrorActionPreference = 'Stop'
+          $env:PATH = "$env:VCToolsInstallDir\bin\arm64;$env:PATH"
+          function Get-Machine([string]$path) {
+            $bytes = [IO.File]::ReadAllBytes($path)
+            $pe = [BitConverter]::ToInt32($bytes, 0x3c)
+            '{0:x4}' -f [BitConverter]::ToUInt16($bytes, $pe + 4)
           }
-          Import-Module ./php/BuildPhp -Force
-          & (Get-Module BuildPhp) {
-            Add-PhpDeps -PhpVersion '${{ needs.resolve-runner.outputs.version }}' -VsVersion '${{ steps.cache-key.outputs.vs }}' -Arch arm64 -Destination '${{ steps.cache-key.outputs.cache-dir }}'
+          Write-Host "VC tools: $env:VCToolsInstallDir"
+          Write-Host "PATH tools:"
+          foreach ($tool in 'cl.exe', 'pgomgr.exe', 'pgort140.dll') {
+            $found = @(Get-Command $tool -All -ErrorAction SilentlyContinue)
+            if ($found) { $found | ForEach-Object { Write-Host "$tool $($_.Source)" } }
+            else { Write-Host "$tool is absent from PATH" }
           }
-
-      - name: Save dependency cache
-        if: steps.restore.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v5
-        with:
-          path: ${{ steps.cache-key.outputs.cache-dir }}
-          key: ${{ steps.restore.outputs.cache-primary-key }}
-
-  php:
-    needs: [resolve-runner, deps]
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [arm64]
-        ts: [nts, ts]
-    runs-on: ${{ needs.resolve-runner.outputs.runner }}
-    steps:
-      - name: Configure PHP source line endings
-        shell: pwsh
-        run: |
-          git config --global core.autocrlf false
-          git config --global core.eol lf
-
-      - name: Checkout PHP source
-        uses: actions/checkout@v6
-        with:
-          repository: ${{ inputs.php-src-repository }}
-          ref: ${{ inputs.php-src-ref }}
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          path: builder
-
-      - name: Restore dependency cache
-        id: deps
-        uses: actions/cache/restore@v5
-        with:
-          path: ${{ needs.deps.outputs.cache-dir }}
-          key: ${{ needs.deps.outputs.cache-key }}
-          fail-on-cache-miss: true
-
-      - name: Build
-        uses: ./builder/php
-        with:
-          arch: ${{ matrix.arch }}
-          ts: ${{ matrix.ts }}
-          libs-build-runs: ${{ inputs.libs-build-runs }}
-          sbom: ${{ inputs.sbom }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-        env:
-          PHP_BUILD_PROVIDER: "The PHP Group"
-          DEPS_DIR: ${{ needs.deps.outputs.cache-dir }}
-          DEPS_CACHE_HIT: ${{ steps.deps.outputs.cache-hit }}
-
-  artifacts:
-    runs-on: ubuntu-latest
-    needs: php
-    outputs:
-      artifact-id: ${{ steps.artifacts.outputs.artifact-id }}
-    steps:
-      - name: Upload artifacts
-        uses: actions/upload-artifact/merge@v7
-        id: artifacts
-        with:
-          name: artifacts
-          delete-merged: true
-
-  tests:
-    needs: [resolve-runner, artifacts]
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [arm64]
-        ts: [nts, ts]
-        opcache: [opcache, nocache]
-        test-type: [php, ext]
-    runs-on: ${{ needs.resolve-runner.outputs.runner }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Download artifacts
-        uses: actions/download-artifact@v8
-        id: artifacts
-        with:
-          name: artifacts
-
-      - name: Get Cache Key
-        id: cache-key
-        shell: pwsh
-        run: |
-          $artifactDirectory = $(pwd).Path
-          $zip = Get-ChildItem -Path $artifactDirectory -Filter "php-*.zip" -File |
-            Where-Object { $_.Name -match "^php-(.+?)-(?:nts-)?Win32-v[sc]\d+-${{ matrix.arch }}\.zip$" } |
-            Select-Object -First 1
-          if ($null -eq $zip) {
-            throw "Unable to determine PHP version from build artifacts in $artifactDirectory"
+          $pgoFiles = @(Get-ChildItem "$env:VSINSTALLDIR\VC" -Recurse -File -Include pgomgr.exe,pgort*.dll)
+          $pgoFiles | ForEach-Object { Write-Host "$(Get-Machine $_.FullName) $($_.FullName)" }
+          @'
+          #include <stdio.h>
+          int main(void) {
+              volatile int value = 0;
+              for (int i = 0; i < 100; i++) value += i;
+              printf("PGO ARM64 runtime works: %d\n", value);
+              return value != 4950;
           }
-          $phpVersion = [regex]::Match($zip.Name, '^php-(.+?)-(?:nts-)?Win32-v[sc]\d+-').Groups[1].Value
-
-          Import-Module (Join-Path $(pwd).Path '\php\BuildPhp') -Force
-          $cacheInfo = Get-DepsCacheInfo -PhpVersion $phpVersion -Arch '${{ matrix.arch }}' -LibsBuildRuns '${{ inputs.libs-build-runs }}' -IncludeDefaultRunsKey
-          Set-Content -Path packages.txt -Value ($cacheInfo.Packages -join "`n")
-          Add-Content -Value "php-version=$phpVersion" -Path $env:GITHUB_OUTPUT
-          Add-Content -Value "cache-key=$($cacheInfo.CacheKey)" -Path $env:GITHUB_OUTPUT
-          Add-Content -Value "cache-dir=$($cacheInfo.CacheDir)" -Path $env:GITHUB_OUTPUT
-
-      - name: Cache Deps
-        id: cache-deps
-        uses: actions/cache@v5
-        with:
-          path: ${{ steps.cache-key.outputs.cache-dir }}
-          key: ${{ steps.cache-key.outputs.cache-key }}-${{ hashFiles('packages.txt') }}
-          fail-on-cache-miss: true
-
-      - name: Test PHP
-        shell: pwsh
-        continue-on-error: true
-        env:
-          DEPS_DIR: ${{ steps.cache-key.outputs.cache-dir }}
-          DEPS_CACHE_HIT: ${{ steps.cache-deps.outputs.cache-hit }}
-          LIBS_BUILD_RUNS: ${{ inputs.libs-build-runs }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          Import-Module (Join-Path $(pwd).Path '\php\BuildPhp') -Force
-          Invoke-PhpTests -PhpVersion ${{ steps.cache-key.outputs.php-version }} `
-                          -Arch ${{matrix.arch}} `
-                          -Ts ${{matrix.ts}} `
-                          -Opcache ${{matrix.opcache}} `
-                          -TestType ${{matrix.test-type}} `
-                          -SourceRepository '${{ inputs.php-src-repository }}' `
-                          -SourceRef '${{ inputs.php-src-ref }}'
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v7
-        continue-on-error: true
-        with:
-          name: test-results-${{matrix.arch}}-${{matrix.ts}}-${{matrix.opcache}}-${{matrix.test-type}}
-          path: test-${{matrix.arch}}-${{matrix.ts}}-${{matrix.opcache}}-${{matrix.test-type}}.xml
-
-  smoke-tests:
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [arm64]
-        ts: [nts, ts]
-    runs-on: ${{ needs.resolve-runner.outputs.runner }}
-    needs: [resolve-runner, artifacts]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Download artifacts
-        uses: actions/download-artifact@v8
-        with:
-          name: artifacts
-          path: artifacts
-
-      - name: Smoke test PHP builds
+          '@ | Set-Content probe.c
+          & cl.exe /nologo /O2 /GL probe.c /link /LTCG /GENPROFILE /OUT:probe.exe
+          if ($LASTEXITCODE) { throw 'PGO compile failed' }
+          & dumpbin.exe /dependents probe.exe
+          & .\probe.exe
+          $originalExit = $LASTEXITCODE
+          Write-Host "PGO binary exit without staging: $originalExit"
+          if ($originalExit) { throw 'PGO runtime probe failed' }
+          $manager = @($pgoFiles | Where-Object { $_.Name -eq 'pgomgr.exe' -and $_.FullName.StartsWith($env:VCToolsInstallDir, [StringComparison]::OrdinalIgnoreCase) })
+          foreach ($exe in $manager) {
+            Write-Host "Running installed PGO manager: $($exe.FullName)"
+            & $exe.FullName /? 2>&1 | Select-Object -First 8
+            Write-Host "PGO manager exit: $LASTEXITCODE"
+          }
+          exit 0
+      - name: Check BCMath SIMD compatibility
+        if: matrix.php != '8.2'
         shell: pwsh
         run: |
-          Import-Module (Join-Path $(pwd).Path '\php\BuildPhp') -Force
-          Invoke-PhpSmokeTests -ArtifactsDirectory (Join-Path $(pwd).Path 'artifacts') `
-                               -Arch ${{matrix.arch}} `
-                               -Ts ${{matrix.ts}}
+          Invoke-WebRequest https://raw.githubusercontent.com/shivammathur/php-src/fix/windows-arm64-master/ext/bcmath/libbcmath/src/xsse.h -OutFile xsse.h
+          & cl.exe /nologo /std:c17 /O2 /I. simd-probe.c /Fe:simd-probe.exe
+          if ($LASTEXITCODE) { throw 'MSVC SIMD compile failed' }
+          $result = & .\simd-probe.exe
+          Write-Host "SIMD result: $result"
+          if ($LASTEXITCODE -or $result -ne 'd26d9d7037b6204b') { throw 'MSVC SIMD result differs from original native ARM64 implementation' }
