@@ -110,7 +110,7 @@ jobs:
       matrix:
         arch: [arm64]
         ts: [ts]
-        host: [native, x64]
+        host: [x64]
     runs-on: ${{ needs.resolve-runner.outputs.runner }}
     steps:
       - name: Configure PHP source line endings
@@ -150,12 +150,15 @@ jobs:
                   if ($env:PROBE_HOST -eq 'x64') {
                       $shell = Join-Path $BuildDirectory 'php-sdk/bin/phpsdk_setshell.bat'
                       $text = [IO.File]::ReadAllText($shell)
-                      if (-not $text.Contains('LEQ 16 set HOST_ARCH_NAME=amd64')) { throw 'Expected host condition missing' }
-                      [IO.File]::WriteAllText($shell, $text.Replace('LEQ 16 set HOST_ARCH_NAME=amd64', 'LEQ 17 set HOST_ARCH_NAME=amd64'))
+                      if ($text -notmatch '(?:EQU|LEQ) 16 set HOST_ARCH_NAME=amd64') { throw 'Expected host condition missing' }
+                      [IO.File]::WriteAllText($shell, ($text -replace '(?:EQU|LEQ) 16 set HOST_ARCH_NAME=amd64', 'LEQ 17 set HOST_ARCH_NAME=amd64'))
                   }
           '@
           $code = $code.Replace('        $toolsetArgs =', "$probe`n        `$toolsetArgs =")
           Set-Content $file $code
+          $action = 'builder/php/action.yml'
+          $content = [IO.File]::ReadAllText($action)
+          [IO.File]::WriteAllText($action, $content.Replace('name: artifacts-', 'name: artifacts-${{ matrix.host }}-'))
 
       - name: Build
         uses: ./builder/php
@@ -180,7 +183,7 @@ jobs:
           Get-FileHash $pgd | Format-List
           $shell = Join-Path $env:PROBE_SDK_DIR 'bin/phpsdk_setshell.bat'
           $text = [IO.File]::ReadAllText($shell)
-          [IO.File]::WriteAllText($shell, $text.Replace('LEQ 16 set HOST_ARCH_NAME=amd64', 'LEQ 17 set HOST_ARCH_NAME=amd64'))
+          [IO.File]::WriteAllText($shell, ($text -replace '(?:EQU|LEQ) 16 set HOST_ARCH_NAME=amd64', 'LEQ 17 set HOST_ARCH_NAME=amd64'))
           @'
           @echo off
           where cl
@@ -199,7 +202,8 @@ jobs:
         run: |
           $obj = Join-Path (Split-Path $env:GITHUB_WORKSPACE -Parent) 'obj'
           if (Test-Path $obj) {
-            & 7z a -t7z -mx=1 build-state.7z $obj Makefile Makefile.objects config.nice.bat config.ts.bat main/config.w32.h
+            $files = @($obj, 'Makefile', 'Makefile.objects', 'config.nice.bat', 'config.ts.bat', 'main/config.w32.h' | Where-Object { Test-Path $_ })
+            & 7z a -t7z -mx=1 build-state.7z @files
             if ($LASTEXITCODE) { throw 'Cannot archive the compiler failure state' }
           }
 
