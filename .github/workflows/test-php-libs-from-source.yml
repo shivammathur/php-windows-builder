@@ -1,5 +1,5 @@
-name: Diagnose VS18 ARM64 GD PGO
-run-name: Compare VS18 ARM64 PGO merge weighting
+name: Relink the preserved ARM64 PGO compiler failure
+run-name: Isolate VS18 ARM64 GD optimizer failure
 on:
   workflow_dispatch:
     inputs:
@@ -103,95 +103,122 @@ jobs:
           path: ${{ steps.cache-key.outputs.cache-dir }}
           key: ${{ steps.restore.outputs.cache-primary-key }}
 
-  php:
+  relink:
     needs: [resolve-runner, deps]
     strategy:
       fail-fast: false
       matrix:
         include:
-          - {arch: arm64, ts: ts, mode: baseline}
-          - {arch: arm64, ts: ts, mode: merge-unit}
-          - {arch: arm64, ts: nts, mode: merge-unit}
-    runs-on: ${{ needs.resolve-runner.outputs.runner }}
+          - {name: native-baseline, host: arm64}
+          - {name: cross-baseline, host: amd64_arm64}
+          - {name: no-profile-control, host: arm64}
+          - {name: fresh-gd-profile, host: arm64}
+    runs-on: windows-11-vs2026-arm
     steps:
-      - name: Configure PHP source line endings
-        shell: pwsh
-        run: |
-          git config --global core.autocrlf false
-          git config --global core.eol lf
-
-      - name: Checkout PHP source
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v6
         with:
           repository: ${{ inputs.php-src-repository }}
           ref: ${{ inputs.php-src-ref }}
-          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Checkout
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v6
         with:
-          path: builder
-          ref: test/arm64-series-dependencies
+          path: probe
 
-      - name: Restore dependency cache
-        id: deps
-        uses: actions/cache/restore@v5
+      - uses: actions/cache/restore@v5
         with:
           path: ${{ needs.deps.outputs.cache-dir }}
           key: ${{ needs.deps.outputs.cache-key }}
           fail-on-cache-miss: true
 
-      - name: Select diagnostic merge weighting
-        shell: pwsh
-        run: |
-          $file = 'builder/php/BuildPhp/private/Invoke-PhpSdkStarter.ps1'
-          $code = Get-Content $file -Raw
-          $probe = @'
-                  Add-Content $env:GITHUB_ENV "PROBE_SDK_DIR=$BuildDirectory/php-sdk"
-                  if ($env:PGO_PROFILE_MODE -eq 'merge-unit') {
-                      $pgoFile = Join-Path $BuildDirectory 'php-sdk/lib/php/libsdk/SDK/Build/PGO/Tool/PGO.php'
-                      $text = [IO.File]::ReadAllText($pgoFile)
-                      $old = '$weight = \SDK\Config::getCurrentArchName() === "arm64" && \SDK\Config::getCurrentCrtName() === "vs17" ? 1 : 1000;'
-                      if (-not $text.Contains($old)) { throw 'Expected SDK PGO merge condition missing' }
-                      [IO.File]::WriteAllText($pgoFile, $text.Replace($old, '$weight = 1;'))
-                      Write-Host 'Diagnostic VS18 SDK PGO merge weight changed from 1000 to 1'
-                  }
-          '@
-          if (-not $code.Contains('        $toolsetArgs =')) { throw 'Missing SDK initialization hook' }
-          $code = $code.Replace('        $toolsetArgs =', "$probe`n        `$toolsetArgs =")
-          Set-Content $file $code
-          $action = 'builder/php/action.yml'
-          $content = [IO.File]::ReadAllText($action)
-          [IO.File]::WriteAllText($action, $content.Replace('name: artifacts-', 'name: artifacts-${{ matrix.mode }}-'))
-
-      - name: Build
-        uses: ./builder/php
+      - uses: actions/download-artifact@v8
         with:
-          arch: ${{ matrix.arch }}
-          ts: ${{ matrix.ts }}
-          libs-build-runs: ${{ inputs.libs-build-runs }}
-          sbom: ${{ inputs.sbom }}
+          repository: shivammathur/php-windows-builder
+          run-id: 38458709293
+          name: pgo-state-baseline-ts
+          path: preserved
           github-token: ${{ secrets.GITHUB_TOKEN }}
-        env:
-          PGO_PROFILE_MODE: ${{ matrix.mode }}
-          PHP_BUILD_PROVIDER: "The PHP Group"
-          DEPS_DIR: ${{ needs.deps.outputs.cache-dir }}
-          DEPS_CACHE_HIT: ${{ steps.deps.outputs.cache-hit }}
 
-      - name: Record profile data and build state
-        if: always()
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.host }}
+          toolset: 14.51.36231
+
+      - name: Restore identical objects, profile and libraries
         shell: pwsh
         run: |
-          $obj = Join-Path (Split-Path $env:GITHUB_WORKSPACE -Parent) 'obj'
-          if (Test-Path $obj) {
-            Get-ChildItem $obj -Recurse -Filter '*.pgd' | Get-FileHash | Format-Table -AutoSize
-            $files = @($obj, 'Makefile', 'Makefile.objects', 'config.nice.bat', 'config.ts.bat', 'config.nts.bat', 'main/config.w32.h' | Where-Object { Test-Path $_ })
-            & 7z a -t7z -mx=1 build-state.7z @files
-            if ($LASTEXITCODE) { throw 'Cannot archive the compiler state' }
+          & 7z x preserved/build-state.7z -oreplay -y
+          if ($LASTEXITCODE) { throw 'Cannot restore the preserved compiler state' }
+          $parent = Split-Path $env:GITHUB_WORKSPACE -Parent
+          if ($parent -ne [IO.Path]::GetFullPath('C:/a/php-windows-builder')) { throw "Replay paths differ: $parent" }
+          Move-Item replay/obj "$parent/obj"
+          Copy-Item '${{ needs.deps.outputs.cache-dir }}' "$parent/deps" -Recurse
+          $pgd = "$parent/obj/Release_TS/php_gd.pgd"
+          $hash = (Get-FileHash $pgd).Hash
+          if ($hash -ne '979C6FE775BF4B9B2F5C514A917D9273E17B9C412A98D515D26215ACE504924F') { throw 'Profile changed' }
+          Write-Host "Preserved PHP PGO profile SHA256: $hash"
+          Get-ChildItem "$parent/obj/Release_TS" -Filter *.obj -Recurse |
+            Sort-Object FullName | Get-FileHash | ConvertTo-Json -Depth 4 | Set-Content object-hashes.json
+          Write-Host "Object manifest SHA256: $((Get-FileHash object-hashes.json).Hash)"
+
+      - name: Select controlled profile input
+        shell: pwsh
+        env:
+          VARIANT: ${{ matrix.name }}
+        run: |
+          $out = 'C:/a/php-windows-builder/obj/Release_TS'
+          $pgd = "$out/php_gd.pgd"
+          $runtime = Join-Path $env:VCToolsInstallDir 'bin/arm64'
+          $env:PATH = "$runtime;C:/a/php-windows-builder/deps/bin;$out;$env:PATH"
+          "PATH=$env:PATH" >> $env:GITHUB_ENV
+          & pgomgr /summary $pgd | Tee-Object original-profile.txt
+          if ($LASTEXITCODE) { throw 'Cannot read preserved profile' }
+          $path = 'probe/pgo-relink.bat'
+          $text = [IO.File]::ReadAllText($path)
+          if ($env:VARIANT -eq 'no-profile-control') {
+            $text = $text.Replace(' /USEPROFILE', '') -replace '/PGD:[^ ]+ ', ''
+            if ($text -match '/PGD:|/USEPROFILE|/GENPROFILE') { throw 'Control still uses profile' }
+            [IO.File]::WriteAllText($path, $text)
+          } elseif ($env:VARIANT -eq 'fresh-gd-profile') {
+            Remove-Item $pgd
+            Get-ChildItem $out -Filter 'php_gd!*.pgc' | Remove-Item
+            [IO.File]::WriteAllText('probe/pgo-instrument.bat', $text.Replace('/USEPROFILE','/GENPROFILE'))
+            & cmd /c (Join-Path $env:GITHUB_WORKSPACE 'probe/pgo-instrument.bat') 2>&1 | Tee-Object instrument.log
+            if ($LASTEXITCODE) { throw 'Fresh instrumentation failed' }
+            & "$out/php.exe" -n -d "extension=$out/php_gd.dll" -r 'for($i=0;$i<1000;$i++){$im=imagecreatetruecolor(100,100);$c=imagecolorallocate($im,255,255,255);imagettftext($im,12,0,10,50,$c,"C:/Windows/Fonts/arial.ttf","hello &#197; &#x6C34;");imagepng($im,"NUL");}echo "GD training complete\n";' 2>&1 | Tee-Object training.log
+            if ($LASTEXITCODE) { throw 'GD training failed' }
+            if (-not @(Get-ChildItem $out -Filter 'php_gd!*.pgc').Count) { throw 'No GD counters collected' }
+            & pgomgr /merge $pgd | Tee-Object merge.log
+            if ($LASTEXITCODE) { throw 'Merge failed' }
+            & pgomgr /summary $pgd | Tee-Object fresh-profile.txt
+            if ($LASTEXITCODE) { throw 'Cannot read new profile' }
+            Get-ChildItem $out -Filter 'php_gd!*.pgc' | Remove-Item
           }
+          Get-Content $path
+          Get-Command link | Format-List Source
+          (Get-Item (Get-Command link).Source).VersionInfo | Format-List FileVersion,ProductVersion
+
+      - name: Force the original PGO link and check the resulting ARM64 binary
+        shell: pwsh
+        run: |
+          & cmd /c (Join-Path $env:GITHUB_WORKSPACE 'probe/pgo-relink.bat') 2>&1 | Tee-Object relink.log
+          $linkExit = $LASTEXITCODE
+          if ($linkExit) { throw "Original PGO link failed: $linkExit" }
+          $dll = 'C:/a/php-windows-builder/obj/Release_TS/php_gd.dll'
+          & dumpbin /headers $dll | Tee-Object headers.log
+          if ($LASTEXITCODE) { throw 'Invalid output DLL' }
+          & 'C:/a/php-windows-builder/obj/Release_TS/php.exe' -n -d "extension=$dll" -r 'echo PHP_VERSION, PHP_EOL; if (!extension_loaded("gd")) exit(1); $im=imagecreatetruecolor(10,10); echo imagesx($im), PHP_EOL; var_dump(imagettfbbox(12,0,"C:/Windows/Fonts/arial.ttf","hello"));'
+          if ($LASTEXITCODE) { throw 'Relinked PHP cannot execute' }
 
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: pgo-state-${{ matrix.mode }}-${{ matrix.ts }}
-          path: build-state.7z
+          name: gd-relink-${{ matrix.name }}
+          path: |
+            relink.log
+            headers.log
+            object-hashes.json
+            original-profile.txt
+            instrument.log
+            training.log
+            merge.log
+            fresh-profile.txt
