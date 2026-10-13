@@ -62,9 +62,11 @@
     # Functions to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no functions to export.
     FunctionsToExport = @(
         # Private functions (sorted)
+        'Add-Arm64SourceCompatPatches',
         'Add-BuildRequirements',
         'Add-Path',
         'Add-PhpDeps',
+        'Add-PgoRequirements',
         'Add-TestRequirements',
         'Add-VS',
         'Add-WindowsTestHelpers',

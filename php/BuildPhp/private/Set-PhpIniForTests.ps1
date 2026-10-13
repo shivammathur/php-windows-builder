@@ -19,7 +19,7 @@ function Set-PhpIniForTests {
         [string] $BuildDirectory,
         [Parameter(Mandatory = $true, Position=1, HelpMessage='Architecture')]
         [ValidateNotNull()]
-        [ValidateSet('x86', 'x64')]
+        [ValidateSet('x86', 'x64', 'arm64')]
         [string] $Arch,
         [Parameter(Mandatory = $true, Position=2, HelpMessage='Specify Cache')]
         [ValidateSet('nocache', 'opcache')]

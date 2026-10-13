@@ -16,6 +16,10 @@ function Get-OciSdk {
         $url = "https://download.oracle.com/otn_software/nt/instantclient/instantclient-sdk-$suffix.zip"
     }
     process {
+        if ($Arch -eq 'arm64') {
+            Write-Host 'Skipping the x64-only Oracle Instant Client SDK for ARM64 builds.'
+            return
+        }
         Get-File -Url $url -OutFile "instantclient-sdk.zip"
         Expand-Archive -Path "instantclient-sdk.zip" -DestinationPath "."
         Move-Item "instantclient_*" "instantclient"

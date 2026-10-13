@@ -15,7 +15,7 @@ function Invoke-PhpBuild {
         [string] $PhpVersion = '',
         [Parameter(Mandatory = $true, Position=1, HelpMessage='PHP Architecture')]
         [ValidateNotNull()]
-        [ValidateSet('x86', 'x64')]
+        [ValidateSet('x86', 'x64', 'arm64')]
         [string] $Arch,
         [Parameter(Mandatory = $true, Position=2, HelpMessage='PHP Build Type')]
         [ValidateNotNull()]
@@ -31,7 +31,7 @@ function Invoke-PhpBuild {
             $fetchSrc = $False
             $PhpVersion = Get-SourcePhpVersion
         }
-        $VsConfig = (Get-VsVersion -PhpVersion $PhpVersion)
+        $VsConfig = (Get-VsVersion -PhpVersion $PhpVersion -Arch $Arch)
         if($null -eq $VsConfig.vs) {
             throw "PHP version $PhpVersion is not supported."
         }
@@ -46,7 +46,7 @@ function Invoke-PhpBuild {
         try {
             Set-Location "$buildDirectory"
 
-            Add-BuildRequirements -PhpVersion $PhpVersion -Arch $Arch -FetchSrc:$fetchSrc
+            Add-BuildRequirements -PhpVersion $PhpVersion -Arch $Arch -VsVersion $VsConfig.vs -Toolset $VsConfig.toolset -FetchSrc:$fetchSrc
 
             $configDirectory = Join-Path $PSScriptRoot "..\config\$($VsConfig.vs)\$Arch"
 
@@ -66,9 +66,17 @@ function Invoke-PhpBuild {
             $artifactsDirectory = Join-Path $currentDirectory 'artifacts'
 
             Set-Location "$buildPath"
+            if($Arch -eq 'arm64') {
+                Add-Arm64SourceCompatPatches -SourceDirectory $buildPath
+            }
             New-Item (Join-Path $buildParent 'obj') -ItemType "directory" -Force > $null 2>&1
             Copy-Item -Path $configBatch -Destination (Join-Path $buildPath "config.$Ts.bat") -Force
-            Add-PhpDeps -PhpVersion $PhpVersion -VsVersion $VsConfig.vs -Arch $Arch -Destination $depsDirectory
+            if ($env:DEPS_DIR -and $env:DEPS_CACHE_HIT -eq 'true') {
+                New-Item -ItemType Directory -Path $depsDirectory -Force | Out-Null
+                Copy-Item -Path "$env:DEPS_DIR\*" -Destination $depsDirectory -Recurse -Force
+            } else {
+                Add-PhpDeps -PhpVersion $PhpVersion -VsVersion $VsConfig.vs -Arch $Arch -Destination $depsDirectory
+            }
 
             $sbomMetadata = Get-PhpSbomMetadata -Sbom $env:SBOM `
                                                     -PhpVersion $PhpVersion `

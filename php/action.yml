@@ -11,7 +11,7 @@ inputs:
     description: PHP version to build, skip this to build from the current source directory
     required: false
   arch:
-    description: Architecture to build
+    description: Architecture to build (x86, x64, or arm64 for PHP 8.0+)
     required: true
   ts:
     description: Thread safety to build
