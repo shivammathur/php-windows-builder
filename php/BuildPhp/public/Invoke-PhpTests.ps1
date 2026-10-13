@@ -29,7 +29,7 @@ function Invoke-PhpTests {
         [string] $PhpVersion,
         [Parameter(Mandatory = $true, Position=1, HelpMessage='PHP Architecture')]
         [ValidateNotNull()]
-        [ValidateSet('x86', 'x64')]
+        [ValidateSet('x86', 'x64', 'arm64')]
         [string] $Arch,
         [Parameter(Mandatory = $true, Position=2, HelpMessage='PHP Build Type')]
         [ValidateNotNull()]
@@ -54,7 +54,7 @@ function Invoke-PhpTests {
     }
     process {
         Set-NetSecurityProtocolType
-        $VsData = (Get-VsVersion -PhpVersion $PhpVersion)
+        $VsData = (Get-VsVersion -PhpVersion $PhpVersion -Arch $Arch)
         if($null -eq $VsData.vs) {
             throw "PHP version $PhpVersion is not supported."
         }

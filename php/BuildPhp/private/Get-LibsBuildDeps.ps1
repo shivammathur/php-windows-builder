@@ -13,7 +13,7 @@ function Get-LibsBuildDeps {
     [OutputType([string[]])]
     param(
         [Parameter(Mandatory=$true)]
-        [ValidateSet('x86','x64')]
+        [ValidateSet('x86','x64','arm64')]
         [string] $Arch,
         [Parameter(Mandatory=$true)]
         [ValidateNotNullOrEmpty()]
@@ -52,7 +52,7 @@ function Get-LibsBuildDeps {
 
         foreach ($artifact in $response.artifacts) {
             # Filter by architecture
-            if ($artifact.name -notmatch $Arch) {
+            if ($artifact.name -notmatch "-$Arch$") {
                 continue
             }
 
@@ -64,7 +64,7 @@ function Get-LibsBuildDeps {
 
             try {
                 Write-Host "Downloading from: $($artifact.archive_download_url)"
-                Invoke-WebRequest -Uri $artifact.archive_download_url -Headers $headers -OutFile $tempZip
+                Invoke-WebRequest -Uri $artifact.archive_download_url -Headers $headers -OutFile $tempZip -MaximumRetryCount 5 -RetryIntervalSec 10
                 Write-Host "Downloaded to: $tempZip (Size: $((Get-Item $tempZip).Length) bytes)"
 
                 Write-Host "Extracting to: $Destination"

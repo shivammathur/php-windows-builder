@@ -24,7 +24,7 @@ function Set-PhpExtTestEnvironment {
         [ValidateLength(1, [int]::MaxValue)]
         [string] $TestsDirectory,
         [Parameter(Mandatory = $true, Position=3, HelpMessage='PHP architecture')]
-        [ValidateSet('x86', 'x64')]
+        [ValidateSet('x86', 'x64', 'arm64')]
         [string] $Arch
     )
     process {
@@ -45,7 +45,7 @@ function Set-PhpExtTestEnvironment {
             [pscustomobject] @{
                 Match = @('pgsql', 'pdo_pgsql')
                 Command = 'Set-PgSqlTestEnvironment'
-                Parameters = @{}
+                Parameters = @{ Arch = $Arch }
             },
             [pscustomobject] @{
                 Match = @('odbc', 'pdo_odbc')
@@ -61,7 +61,7 @@ function Set-PhpExtTestEnvironment {
                 Match = @('firebird', 'interbase')
                 Command = 'Set-FirebirdTestEnvironment'
                 Parameters = @{
-                    Arch = $Arch
+                    Arch = $(if ($Arch -eq 'arm64') { 'x64' } else { $Arch })
                 }
             },
             [pscustomobject] @{
@@ -91,6 +91,10 @@ function Set-PhpExtTestEnvironment {
         }
 
         foreach($setup in $selectedSetups) {
+            if ($Arch -eq 'arm64' -and $setup.Command -in 'Set-OdbcTestEnvironment', 'Set-MsSqlTestEnvironment') {
+                Write-Host 'SQL Server is not supported on Windows ARM64; database-dependent ODBC tests will skip.'
+                continue
+            }
             $parameters = $setup.Parameters
             & $setup.Command @parameters
         }

@@ -16,7 +16,7 @@ function Invoke-PhpSmokeTests {
         [ValidateLength(1, [int]::MaxValue)]
         [string] $ArtifactsDirectory,
         [Parameter(Mandatory = $true, Position=1, HelpMessage='PHP Architecture')]
-        [ValidateSet('x86', 'x64')]
+        [ValidateSet('x86', 'x64', 'arm64')]
         [string] $Arch,
         [Parameter(Mandatory = $true, Position=2, HelpMessage='PHP Build Type')]
         [ValidateSet('nts', 'ts')]

@@ -19,7 +19,7 @@ function Get-PhpDepsPackages {
         [ValidateNotNullOrEmpty()]
         [string] $VsVersion,
         [Parameter(Mandatory=$true)]
-        [ValidateSet('x86','x64')]
+        [ValidateSet('x86','x64','arm64')]
         [string] $Arch
     )
 
