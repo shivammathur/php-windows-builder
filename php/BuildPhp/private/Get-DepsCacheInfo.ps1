@@ -18,7 +18,7 @@ function Get-DepsCacheInfo {
         [ValidateNotNullOrEmpty()]
         [string] $PhpVersion,
         [Parameter(Mandatory=$true)]
-        [ValidateSet('x86','x64')]
+        [ValidateSet('x86','x64','arm64')]
         [string] $Arch,
         [Parameter(Mandatory=$false)]
         [string] $LibsBuildRuns = '',
@@ -47,7 +47,7 @@ function Get-DepsCacheInfo {
             $runsKey = 'default'
         }
 
-        $vsVersion = (Get-VsVersion -PhpVersion $PhpVersion).vs
+        $vsVersion = (Get-VsVersion -PhpVersion $PhpVersion -Arch $Arch).vs
         $packageData = Get-PhpDepsPackages -PhpVersion $PhpVersion -VsVersion $vsVersion -Arch $Arch
 
         $cacheKey = "deps-$depsPhpVersion-$Arch"

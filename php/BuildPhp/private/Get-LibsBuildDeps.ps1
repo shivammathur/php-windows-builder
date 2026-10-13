@@ -13,7 +13,7 @@ function Get-LibsBuildDeps {
     [OutputType([string[]])]
     param(
         [Parameter(Mandatory=$true)]
-        [ValidateSet('x86','x64')]
+        [ValidateSet('x86','x64','arm64')]
         [string] $Arch,
         [Parameter(Mandatory=$true)]
         [ValidateNotNullOrEmpty()]
@@ -52,7 +52,7 @@ function Get-LibsBuildDeps {
 
         foreach ($artifact in $response.artifacts) {
             # Filter by architecture
-            if ($artifact.name -notmatch $Arch) {
+            if ($artifact.name -notmatch "-$Arch$") {
                 continue
             }
 

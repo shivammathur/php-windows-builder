@@ -41,15 +41,16 @@ jobs:
         shell: bash
         run: |
           read -r major minor < <(awk '/^#define PHP_(MAJOR|MINOR)_VERSION/ { v[++i]=$3 } END { print v[1], v[2] }' php-src/main/php_version.h)
-          runner="$([ "$major" -gt 8 ] || { [ "$major" -eq 8 ] && [ "$minor" -ge 6 ]; } && echo windows-2025-vs2026 || echo windows-2022)"
+          runner="$([ "$major" -gt 8 ] || { [ "$major" -eq 8 ] && [ "$minor" -ge 6 ]; } && echo windows-11-vs2026-arm || echo windows-11-arm)"
           echo "PHP source version: $major.$minor; runner: $runner"
           echo "runner=$runner" >> "$GITHUB_OUTPUT"
 
   php:
     needs: resolve-runner
     strategy:
+      fail-fast: false
       matrix:
-        arch: [x64, x86]
+        arch: [arm64]
         ts: [nts, ts]
     runs-on: ${{ needs.resolve-runner.outputs.runner }}
     steps:
@@ -98,8 +99,9 @@ jobs:
   tests:
     needs: [resolve-runner, artifacts]
     strategy:
+      fail-fast: false
       matrix:
-        arch: [x64, x86]
+        arch: [arm64]
         ts: [nts, ts]
         opcache: [opcache, nocache]
         test-type: [php, ext]
@@ -168,8 +170,9 @@ jobs:
 
   smoke-tests:
     strategy:
+      fail-fast: false
       matrix:
-        arch: [x64, x86]
+        arch: [arm64]
         ts: [nts, ts]
     runs-on: ${{ needs.resolve-runner.outputs.runner }}
     needs: [resolve-runner, artifacts]
