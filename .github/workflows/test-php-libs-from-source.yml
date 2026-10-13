@@ -1,195 +1,29 @@
-name: Build PHP with custom library builds from winlibs/winlib-builder (source)
-run-name: Build PHP from source ${{ inputs.php-src-ref }}
+name: Test ARM64 PHP database prerequisites
 on:
   workflow_dispatch:
-    inputs:
-      php-src-repository:
-        description: 'php-src repository to source builds and tests from'
-        required: true
-      php-src-ref:
-        description: 'Branch, tag, or SHA in the php-src repository to source builds and tests from'
-        required: true
-      libs-build-runs:
-        description: 'Comma-separated list of GitHub Actions run IDs from winlibs/winlib-builder'
-        required: false
-      sbom:
-        type: choice
-        options: ['true', 'false']
-        description: Add SBOM files to binary archives
-        required: false
-        default: 'true'
-
 jobs:
-  resolve-runner:
-    runs-on: ubuntu-latest
-    outputs:
-      runner: ${{ steps.resolve.outputs.runner }}
-    steps:
-      - name: Checkout PHP source
-        uses: actions/checkout@v6
-        with:
-          repository: ${{ inputs.php-src-repository }}
-          ref: ${{ inputs.php-src-ref }}
-          token: ${{ secrets.GITHUB_TOKEN }}
-          path: php-src
-          fetch-depth: 1
-          sparse-checkout: main/php_version.h
-          sparse-checkout-cone-mode: false
-
-      - name: Resolve runner
-        id: resolve
-        shell: bash
-        run: |
-          read -r major minor < <(awk '/^#define PHP_(MAJOR|MINOR)_VERSION/ { v[++i]=$3 } END { print v[1], v[2] }' php-src/main/php_version.h)
-          runner="$([ "$major" -gt 8 ] || { [ "$major" -eq 8 ] && [ "$minor" -ge 6 ]; } && echo windows-11-vs2026-arm || echo windows-11-arm)"
-          echo "PHP source version: $major.$minor; runner: $runner"
-          echo "runner=$runner" >> "$GITHUB_OUTPUT"
-
-  php:
-    needs: resolve-runner
+  services:
     strategy:
       fail-fast: false
       matrix:
-        arch: [arm64]
-        ts: [nts, ts]
-    runs-on: ${{ needs.resolve-runner.outputs.runner }}
+        runner: [windows-11-arm, windows-11-vs2026-arm]
+    runs-on: ${{ matrix.runner }}
     steps:
-      - name: Configure PHP source line endings
+      - uses: actions/checkout@v6
+      - name: Test database prerequisites
         shell: pwsh
         run: |
-          git config --global core.autocrlf false
-          git config --global core.eol lf
-
-      - name: Checkout PHP source
-        uses: actions/checkout@v6
-        with:
-          repository: ${{ inputs.php-src-repository }}
-          ref: ${{ inputs.php-src-ref }}
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          path: builder
-
-      - name: Build
-        uses: ./builder/php
-        with:
-          arch: ${{ matrix.arch }}
-          ts: ${{ matrix.ts }}
-          libs-build-runs: ${{ inputs.libs-build-runs }}
-          sbom: ${{ inputs.sbom }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-        env:
-          PHP_BUILD_PROVIDER: "The PHP Group"
-
-  artifacts:
-    runs-on: ubuntu-latest
-    needs: php
-    outputs:
-      artifact-id: ${{ steps.artifacts.outputs.artifact-id }}
-    steps:
-      - name: Upload artifacts
-        uses: actions/upload-artifact/merge@v7
-        id: artifacts
-        with:
-          name: artifacts
-          delete-merged: true
-
-  tests:
-    needs: [resolve-runner, artifacts]
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [arm64]
-        ts: [nts, ts]
-        opcache: [opcache, nocache]
-        test-type: [php, ext]
-    runs-on: ${{ needs.resolve-runner.outputs.runner }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Download artifacts
-        uses: actions/download-artifact@v8
-        id: artifacts
-        with:
-          name: artifacts
-
-      - name: Get Cache Key
-        id: cache-key
-        shell: pwsh
-        run: |
-          $artifactDirectory = $(pwd).Path
-          $zip = Get-ChildItem -Path $artifactDirectory -Filter "php-*.zip" -File |
-            Where-Object { $_.Name -match "^php-(.+?)-(?:nts-)?Win32-v[sc]\d+-${{ matrix.arch }}\.zip$" } |
-            Select-Object -First 1
-          if ($null -eq $zip) {
-            throw "Unable to determine PHP version from build artifacts in $artifactDirectory"
+          Import-Module ./php/BuildPhp/BuildPhp.psd1 -Force
+          & (Get-Module BuildPhp) {
+            Set-PhpExtTestEnvironment -BuildDirectory $pwd -TestsDirectory . -Arch arm64 `
+              -TestDirectories @('ext\mysqli\tests', 'ext\pgsql\tests', 'ext\odbc\tests', 'ext\pdo_firebird\tests')
+            & "$env:PGBIN\psql.exe" -h 127.0.0.1 -U postgres -d test -c 'SELECT version();'
+            if ($LASTEXITCODE) { throw 'PostgreSQL test server query failed' }
+            & mysql --host=127.0.0.1 --user=root -e 'SELECT VERSION();' test
+            if ($LASTEXITCODE) { throw 'MySQL test server query failed' }
+            if ((Get-Service FirebirdServerPHPTestFirebirdx64).Status -ne 'Running') { throw 'Firebird test service failed' }
+            Set-Content "$env:TEMP\firebird-query.sql" 'SELECT 1 FROM RDB$DATABASE;'
+            & C:\Firebird-x64\isql.exe -q -user SYSDBA -password phpfi "127.0.0.1:$env:PDO_FIREBIRD_TEST_DATABASE" -i "$env:TEMP\firebird-query.sql"
+            if ($LASTEXITCODE) { throw 'Firebird test server query failed' }
+            if ($env:ODBC_TEST_DSN -or $env:PDO_ODBC_TEST_DSN) { throw 'Unsupported SQL Server tests were configured' }
           }
-          $phpVersion = [regex]::Match($zip.Name, '^php-(.+?)-(?:nts-)?Win32-v[sc]\d+-').Groups[1].Value
-
-          Import-Module (Join-Path $(pwd).Path '\php\BuildPhp') -Force
-          $cacheInfo = Get-DepsCacheInfo -PhpVersion $phpVersion -Arch '${{ matrix.arch }}' -LibsBuildRuns '${{ inputs.libs-build-runs }}' -IncludeDefaultRunsKey
-          Set-Content -Path packages.txt -Value ($cacheInfo.Packages -join "`n")
-          Add-Content -Value "php-version=$phpVersion" -Path $env:GITHUB_OUTPUT
-          Add-Content -Value "cache-key=$($cacheInfo.CacheKey)" -Path $env:GITHUB_OUTPUT
-          Add-Content -Value "cache-dir=$($cacheInfo.CacheDir)" -Path $env:GITHUB_OUTPUT
-
-      - name: Cache Deps
-        id: cache-deps
-        uses: actions/cache@v5
-        with:
-          path: ${{ steps.cache-key.outputs.cache-dir }}
-          key: ${{ steps.cache-key.outputs.cache-key }}-${{ hashFiles('packages.txt') }}
-
-      - name: Test PHP
-        shell: pwsh
-        continue-on-error: true
-        env:
-          DEPS_DIR: ${{ steps.cache-key.outputs.cache-dir }}
-          DEPS_CACHE_HIT: ${{ steps.cache-deps.outputs.cache-hit }}
-          LIBS_BUILD_RUNS: ${{ inputs.libs-build-runs }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          Import-Module (Join-Path $(pwd).Path '\php\BuildPhp') -Force
-          Invoke-PhpTests -PhpVersion ${{ steps.cache-key.outputs.php-version }} `
-                          -Arch ${{matrix.arch}} `
-                          -Ts ${{matrix.ts}} `
-                          -Opcache ${{matrix.opcache}} `
-                          -TestType ${{matrix.test-type}} `
-                          -SourceRepository '${{ inputs.php-src-repository }}' `
-                          -SourceRef '${{ inputs.php-src-ref }}'
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v7
-        continue-on-error: true
-        with:
-          name: test-results-${{matrix.arch}}-${{matrix.ts}}-${{matrix.opcache}}-${{matrix.test-type}}
-          path: test-${{matrix.arch}}-${{matrix.ts}}-${{matrix.opcache}}-${{matrix.test-type}}.xml
-
-  smoke-tests:
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [arm64]
-        ts: [nts, ts]
-    runs-on: ${{ needs.resolve-runner.outputs.runner }}
-    needs: [resolve-runner, artifacts]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Download artifacts
-        uses: actions/download-artifact@v8
-        with:
-          name: artifacts
-          path: artifacts
-
-      - name: Smoke test PHP builds
-        shell: pwsh
-        run: |
-          Import-Module (Join-Path $(pwd).Path '\php\BuildPhp') -Force
-          Invoke-PhpSmokeTests -ArtifactsDirectory (Join-Path $(pwd).Path 'artifacts') `
-                               -Arch ${{matrix.arch}} `
-                               -Ts ${{matrix.ts}}
