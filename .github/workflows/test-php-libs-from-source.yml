@@ -85,3 +85,29 @@ jobs:
           $result = & .\simd-probe.exe
           Write-Host "SIMD result: $result"
           if ($LASTEXITCODE -or $result -ne 'd26d9d7037b6204b') { throw 'MSVC SIMD result differs from original native ARM64 implementation' }
+  linux-simd:
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v6
+      - name: Compare original and patched ARM64 SIMD
+        shell: bash
+        run: |
+          set -euo pipefail
+          flags=(-std=c17 -O2 -Wall -Werror)
+          if [[ '${{ matrix.cc }}' == gcc ]]; then flags+=(-Wno-error=maybe-uninitialized); fi
+          curl -fsSL https://raw.githubusercontent.com/php/php-src/8db886e419a6aba1903ec97754b0548051b55f9c/ext/bcmath/libbcmath/src/xsse.h -o xsse.h
+          ${{ matrix.cc }} "${flags[@]}" simd-probe.c -o original
+          ${{ matrix.cc }} "${flags[@]}" -S simd-probe.c -o original.s
+          original=$(./original)
+          curl -fsSL https://raw.githubusercontent.com/shivammathur/php-src/fix/windows-arm64-master/ext/bcmath/libbcmath/src/xsse.h -o xsse.h
+          ${{ matrix.cc }} "${flags[@]}" simd-probe.c -o patched
+          ${{ matrix.cc }} "${flags[@]}" -S simd-probe.c -o patched.s
+          patched=$(./patched)
+          echo "Original: $original; patched: $patched"
+          test "$original" = "$patched"
+          test "$patched" = d26d9d7037b6204b
+          diff -u <(sed '/^\/\/ [0-9]/d' original.s) <(sed '/^\/\/ [0-9]/d' patched.s)

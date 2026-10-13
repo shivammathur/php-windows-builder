@@ -1,6 +1,9 @@
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
+#ifndef __has_builtin
+#define __has_builtin(x) 0
+#endif
 #include "xsse.h"
 
 static uint64_t hash = 1469598103934665603ULL;
