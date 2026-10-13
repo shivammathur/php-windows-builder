@@ -1,5 +1,5 @@
 name: Relink the preserved ARM64 PGO compiler failure
-run-name: Isolate VS18 ARM64 GD optimizer failure
+run-name: Review GD PGO profile modes and reduced compiler reproducer
 on:
   workflow_dispatch:
     inputs:
@@ -109,8 +109,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {name: no-profile-control, host: arm64}
-          - {name: fresh-gd-profile, host: arm64}
+          - {name: no-path-profile, host: arm64}
+          - {name: exact-profile, host: arm64}
     runs-on: windows-11-vs2026-arm
     steps:
       - uses: actions/checkout@v6
@@ -209,10 +209,12 @@ jobs:
             $text = $text.Replace(' /USEPROFILE', '') -replace '/PGD:[^ ]+ ', ''
             if ($text -match '/PGD:|/USEPROFILE|/GENPROFILE') { throw 'Control still uses profile' }
             [IO.File]::WriteAllText($path, $text)
-          } elseif ($env:VARIANT -eq 'fresh-gd-profile') {
+          } elseif ($env:VARIANT -in 'no-path-profile','exact-profile') {
             Remove-Item $pgd
             Get-ChildItem $out -Filter 'php_gd!*.pgc' | Remove-Item
-            [IO.File]::WriteAllText('probe/pgo-instrument.bat', $text.Replace('/USEPROFILE','/GENPROFILE'))
+            $instrument = if ($env:VARIANT -eq 'no-path-profile') { '/GENPROFILE:NOPATH' } else { '/GENPROFILE:EXACT' }
+            [IO.File]::WriteAllText('probe/pgo-instrument.bat', $text.Replace('/USEPROFILE',$instrument))
+            Get-Content probe/pgo-instrument.bat
             & cmd /c (Join-Path $env:GITHUB_WORKSPACE 'probe/pgo-instrument.bat') 2>&1 | Tee-Object instrument.log
             if ($LASTEXITCODE) { throw 'Fresh instrumentation failed' }
             & "$out/php.exe" -n -d "extension=$out/php_gd.dll" -r 'for($i=0;$i<1000;$i++){$im=imagecreatetruecolor(100,100);$c=imagecolorallocate($im,255,255,255);if (!is_array(imagettftext($im,12,0,10,50,$c,"C:/Windows/Fonts/arial.ttf","hello &#197; &#x6C34;")) || !imagepng($im,"NUL")) exit(1);imagedestroy($im);}echo "GD training complete\n";' 2>&1 | Tee-Object training.log
@@ -256,3 +258,36 @@ jobs:
             merge.log
             fresh-profile.txt
             cli-build.log
+
+  reduced:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {name: vs17-arm64, runner: windows-11-arm, arch: arm64, toolset: '14.44'}
+          - {name: vs18-arm64, runner: windows-11-vs2026-arm, arch: arm64, toolset: '14.51'}
+          - {name: vs18-x64, runner: windows-11-vs2026-arm, arch: amd64, toolset: '14.51'}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6
+        with:
+          repository: ${{ inputs.php-src-repository }}
+          ref: ${{ inputs.php-src-ref }}
+          path: source
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.arch }}
+          toolset: ${{ matrix.toolset }}
+      - name: Compile and run isolated GD function with and without PGO
+        shell: pwsh
+        run: ./diagnostics/gd-reduced.ps1
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: gd-reduced-${{ matrix.name }}
+          path: |
+            reduced/*.c
+            reduced/*.h
+            reduced/*.log
+            reduced/*.json
