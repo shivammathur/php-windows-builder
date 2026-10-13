@@ -1,5 +1,5 @@
 name: Relink the preserved ARM64 PGO compiler failure
-run-name: Relink identical ARM64 PGO objects and profile
+run-name: Diagnose ARM64 core DLL PGO linker settings
 on:
   workflow_dispatch:
     inputs:
@@ -108,7 +108,27 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        host: [arm64, amd64_arm64]
+        include:
+          - name: native-baseline
+            host: arm64
+            flags: ''
+            modern: false
+          - name: cross-baseline
+            host: amd64_arm64
+            flags: ''
+            modern: false
+          - name: inliner-cache-off
+            host: arm64
+            flags: /d2:-FuncCache1
+            modern: false
+          - name: useprofile
+            host: arm64
+            flags: ''
+            modern: true
+          - name: useprofile-inliner-cache-off
+            host: arm64
+            flags: /d2:-FuncCache1
+            modern: true
     runs-on: windows-11-arm
     steps:
       - uses: actions/checkout@v6
@@ -145,7 +165,7 @@ jobs:
           & 7z x preserved/build-state.7z -oreplay -y
           if ($LASTEXITCODE) { throw 'Cannot restore the preserved compiler state' }
           $parent = Split-Path $env:GITHUB_WORKSPACE -Parent
-          if ($parent -ne 'C:aphp-windows-builder') { throw "Replay paths differ: $parent" }
+          if ($parent -ne [IO.Path]::GetFullPath('C:/a/php-windows-builder')) { throw "Replay paths differ: $parent" }
           Move-Item replay/obj "$parent/obj"
           Copy-Item '${{ needs.deps.outputs.cache-dir }}' "$parent/deps" -Recurse
           $pgd = "$parent/obj/Release_TS/php8ts.pgd"
@@ -156,22 +176,33 @@ jobs:
             Sort-Object FullName | Get-FileHash | ConvertTo-Json -Depth 4 | Set-Content object-hashes.json
           Write-Host "Object manifest SHA256: $((Get-FileHash object-hashes.json).Hash)"
 
-      - name: Force the original PGO link and check the resulting ARM64 binary
+      - name: Select PGO link options
         shell: pwsh
         run: |
-          & cmd /c probe/pgo-relink.bat 2>&1 | Tee-Object relink.log
+          if ('${{ matrix.modern }}' -eq 'true') {
+            $path = 'probe/pgo-relink.bat'
+            $text = [IO.File]::ReadAllText($path)
+            [IO.File]::WriteAllText($path, $text.Replace('/LTCG:PGUPDATE', '/LTCG /USEPROFILE'))
+          }
+
+      - name: Force the original PGO link and check the resulting ARM64 binary
+        env:
+          RELINK_FLAGS: ${{ matrix.flags }}
+        shell: pwsh
+        run: |
+          & cmd /c (Join-Path $env:GITHUB_WORKSPACE 'probe/pgo-relink.bat') 2>&1 | Tee-Object relink.log
           $linkExit = $LASTEXITCODE
           if ($linkExit) { throw "Original PGO link failed: $linkExit" }
-          $dll = 'C:aphp-windows-builderobjRelease_TSphp8ts.dll'
+          $dll = 'C:/a/php-windows-builder/obj/Release_TS/php8ts.dll'
           & dumpbin /headers $dll | Tee-Object headers.log
           if ($LASTEXITCODE) { throw 'Invalid output DLL' }
-          & 'C:aphp-windows-builderobjRelease_TSphp.exe' -n -r 'echo PHP_VERSION, PHP_EOL; $a=range(0,10000); echo array_sum($a), PHP_EOL;'
+          & 'C:/a/php-windows-builder/obj/Release_TS/php.exe' -n -r 'echo PHP_VERSION, PHP_EOL; $a=range(0,10000); echo array_sum($a), PHP_EOL;'
           if ($LASTEXITCODE) { throw 'Relinked PHP cannot execute' }
 
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: pgo-relink-${{ matrix.host }}
+          name: pgo-relink-${{ matrix.name }}
           path: |
             relink.log
             headers.log
