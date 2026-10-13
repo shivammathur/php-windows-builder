@@ -5,11 +5,11 @@ permissions:
   actions: read
 jobs:
   firebird:
-    runs-on: windows-11-arm
+    runs-on: windows-2022
     strategy:
       fail-fast: false
       matrix:
-        arch: [x64, arm64]
+        arch: [x64]
     steps:
       - uses: actions/checkout@v6
       - uses: actions/checkout@v6
@@ -47,7 +47,58 @@ jobs:
             firebird-*.xml
             firebird-*.json
             firebird-*.diff
+  deps:
+    runs-on: windows-11-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.4', '8.5']
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6
+        with:
+          ref: test/arm64-series-dependencies
+          path: builder
+      - name: Resolve dependency cache
+        id: plan
+        shell: pwsh
+        run: |
+          if ((git -C builder rev-parse HEAD) -ne '1d4e815ca5467192388eb2c89d1227522cf1e3d5') { throw 'Production test builder moved' }
+          $p = Get-Content diagnostics/php-runs.json -Raw | ConvertFrom-Json | Where-Object php -eq '${{ matrix.php }}'
+          foreach ($key in 'version','dependencies') { "$key=$($p.$key)" >> $env:GITHUB_OUTPUT }
+          Import-Module ./builder/php/BuildPhp -Force
+          $info = Get-DepsCacheInfo -PhpVersion $p.version -Arch arm64 -LibsBuildRuns $p.dependencies -IncludeDefaultRunsKey
+          Set-Content packages.txt ($info.Packages -join "`n")
+          "cache-key=$($info.CacheKey)" >> $env:GITHUB_OUTPUT
+          "cache-dir=$($info.CacheDir)" >> $env:GITHUB_OUTPUT
+      - uses: actions/cache/restore@v5
+        id: cache
+        with:
+          path: ${{ steps.plan.outputs.cache-dir }}
+          key: ${{ steps.plan.outputs.cache-key }}-${{ hashFiles('packages.txt') }}
+      - name: Populate this diagnostic branch's dependency cache
+        if: steps.cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        env:
+          LIBS_BUILD_RUNS: ${{ steps.plan.outputs.dependencies }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          $rate = Invoke-RestMethod https://api.github.com/rate_limit -Headers @{Authorization="Bearer $env:GITHUB_TOKEN"}
+          $required = 12 * @($env:LIBS_BUILD_RUNS -split ',').Count
+          if ($rate.resources.core.remaining -lt $required) {
+            $reset = [DateTimeOffset]::FromUnixTimeSeconds($rate.resources.core.reset)
+            $wait = [Math]::Max(1, [int][Math]::Ceiling(($reset - [DateTimeOffset]::UtcNow).TotalSeconds) + 5)
+            Start-Sleep -Seconds $wait
+          }
+          Import-Module ./builder/php/BuildPhp -Force
+          & (Get-Module BuildPhp) { Add-PhpDeps -PhpVersion '${{ steps.plan.outputs.version }}' -VsVersion vs17 -Arch arm64 -Destination '${{ steps.plan.outputs.cache-dir }}' }
+      - uses: actions/cache/save@v5
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          path: ${{ steps.plan.outputs.cache-dir }}
+          key: ${{ steps.cache.outputs.cache-primary-key }}
   extensions:
+    needs: deps
     runs-on: windows-11-arm
     strategy:
       fail-fast: false
