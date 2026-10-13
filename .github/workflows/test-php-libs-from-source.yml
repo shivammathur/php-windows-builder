@@ -1,5 +1,5 @@
 name: Relink the preserved ARM64 PGO compiler failure
-run-name: Isolate ARM64 hash loop compiler failure
+run-name: Diagnose ARM64 PGO profile generation
 on:
   workflow_dispatch:
     inputs:
@@ -109,14 +109,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: no-profile-control
+          - name: legacy-profile
             host: arm64
-          - name: recompile-baseline
+            instrument: /LTCG:PGINSTRUMENT
+          - name: modern-profile
             host: arm64
-          - name: hash-no-vector
+            instrument: /LTCG /GENPROFILE
+          - name: exact-profile
             host: arm64
-          - name: hash-no-inline
+            instrument: /LTCG /GENPROFILE:EXACT
+          - name: no-path-profile
             host: arm64
+            instrument: /LTCG /GENPROFILE:NOPATH
     runs-on: windows-11-arm
     steps:
       - uses: actions/checkout@v6
@@ -164,43 +168,36 @@ jobs:
             Sort-Object FullName | Get-FileHash | ConvertTo-Json -Depth 4 | Set-Content object-hashes.json
           Write-Host "Object manifest SHA256: $((Get-FileHash object-hashes.json).Hash)"
 
-      - name: Isolate optimization of the reported hash function
+      - name: Collect a fresh profile with the preserved objects
         shell: pwsh
         env:
-          VARIANT: ${{ matrix.name }}
+          INSTRUMENT_FLAGS: ${{ matrix.instrument }}
         run: |
-          $variant = $env:VARIANT
-          if ($variant -eq 'no-profile-control') {
-            $path = 'probe/pgo-relink.bat'
-            $text = [IO.File]::ReadAllText($path).Replace('/LTCG:PGUPDATE', '/LTCG')
-            $text = $text -replace '/PGD:[^ ]+ ', ''
-            if ($text -match '/PGD:|/USEPROFILE|/LTCG:PG') { throw 'Control still uses PGO' }
-            [IO.File]::WriteAllText($path, $text)
-          } else {
-            Copy-Item replay/main/config.w32.h main/config.w32.h
-            $path = 'Zend/zend_hash.c'
-            $text = [IO.File]::ReadAllText($path)
-            $signature = 'static zend_always_inline Bucket *zend_hash_index_find_bucket(const HashTable *ht, zend_ulong h)'
-            $start = $text.IndexOf($signature)
-            if ($start -lt 0) { throw 'Missing diagnostic function' }
-            $end = $text.IndexOf("`n}", $start) + 2
-            $original = $text.Substring($start, $end - $start)
-            $replacement = $original
-            if ($variant -eq 'hash-no-vector') {
-              $replacement = $original.Replace("`twhile (idx != HT_INVALID_IDX) {", "#if defined(_M_ARM64) && defined(_MSC_VER) && !defined(__clang__)`n# pragma loop(no_vector)`n#endif`n`twhile (idx != HT_INVALID_IDX) {")
-            } elseif ($variant -eq 'hash-no-inline') {
-              $replacement = $original.Replace($signature, "#if defined(_M_ARM64) && defined(_MSC_VER) && !defined(__clang__)`n$($signature.Replace('zend_always_inline', '__declspec(noinline)'))`n#else`n$signature`n#endif")
-            }
-            if ($variant -ne 'recompile-baseline' -and $replacement -eq $original) { throw 'Diagnostic edit did not apply' }
-            [IO.File]::WriteAllText($path, $text.Substring(0, $start) + $replacement + $text.Substring($end))
-            & git diff -- Zend/zend_hash.c | Tee-Object source-diff.txt
-            if ($LASTEXITCODE) { throw 'Cannot record source difference' }
-            Remove-Item 'C:/a/php-windows-builder/obj/Release_TS/Zend/zend_hash.obj'
-            & cmd /c (Join-Path $env:GITHUB_WORKSPACE 'probe/pgo-compile-hash.bat') 2>&1 | Tee-Object compile.log
-            if ($LASTEXITCODE) { throw 'Diagnostic recompile failed' }
-            Get-FileHash 'C:/a/php-windows-builder/obj/Release_TS/Zend/zend_hash.obj' | Format-List
-          }
-          Get-Content probe/pgo-relink.bat
+          $out = 'C:/a/php-windows-builder/obj/Release_TS'
+          $pgd = "$out/php8ts.pgd"
+          Copy-Item $pgd original-php8ts.pgd
+          Remove-Item $pgd
+          Get-ChildItem $out -Filter 'php8ts!*.pgc' | Remove-Item
+          $original = [IO.File]::ReadAllText('probe/pgo-relink.bat')
+          [IO.File]::WriteAllText('probe/pgo-instrument.bat', $original.Replace('/LTCG:PGUPDATE', $env:INSTRUMENT_FLAGS))
+          Get-Content probe/pgo-instrument.bat
+          & cmd /c (Join-Path $env:GITHUB_WORKSPACE 'probe/pgo-instrument.bat') 2>&1 | Tee-Object instrument.log
+          if ($LASTEXITCODE) { throw 'Instrumentation link failed' }
+          $runtime = Join-Path $env:VCToolsInstallDir 'bin/arm64'
+          if (-not (Test-Path "$runtime/pgort140.dll")) { throw 'Missing matching ARM64 PGO runtime' }
+          $env:PATH = "$runtime;$env:PATH"
+          & "$out/php.exe" -n Zend/bench.php 2>&1 | Tee-Object training.log
+          if ($LASTEXITCODE) { throw 'Benchmark training failed' }
+          $counts = @(Get-ChildItem $out -Filter 'php8ts!*.pgc')
+          if (-not $counts.Count) { throw 'Training produced no counters' }
+          Get-FileHash $counts.FullName | Format-List
+          & pgomgr /merge $pgd 2>&1 | Tee-Object merge.log
+          if ($LASTEXITCODE) { throw 'Profile merge failed' }
+          Get-FileHash $pgd | Format-List
+          & pgomgr /summary $pgd 2>&1 | Tee-Object profile-summary.log
+          if ($LASTEXITCODE) { throw 'Profile summary failed' }
+          $counts | Remove-Item
+          Copy-Item $pgd fresh-php8ts.pgd
 
       - name: Force the original PGO link and check the resulting ARM64 binary
         shell: pwsh
@@ -217,10 +214,13 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: pgo-relink-${{ matrix.name }}
+          name: pgo-profile-${{ matrix.name }}
           path: |
             relink.log
             headers.log
             object-hashes.json
-            compile.log
-            source-diff.txt
+            instrument.log
+            training.log
+            merge.log
+            profile-summary.log
+            fresh-php8ts.pgd
