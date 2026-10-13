@@ -4,7 +4,10 @@
 #ifndef __has_builtin
 #define __has_builtin(x) 0
 #endif
-#include "xsse.h"
+#ifndef HEADER
+#define HEADER "xsse.h"
+#endif
+#include HEADER
 
 static uint64_t hash = 1469598103934665603ULL;
 static void record(__m128i value)
@@ -35,14 +38,17 @@ int main(void)
         record(_mm_set_epi64x(INT64_MAX-k, INT64_MIN+k));
         record(_mm_cvtsi32_si128(-k));
         record(_mm_cvtsi64_si128(INT64_MIN+k));
+#ifndef ZEND_ONLY
         record(_mm_loadu_si16(&k));
         record(_mm_loadu_si32(&k));
         record(_mm_loadu_si64(&hash));
+#endif
         record(_mm_sad_epu8(a, b));
         record(_mm_move_epi64(a));
         record(_mm_shuffle_epi32(a, 0x1b));
         record(_mm_shufflehi_epi16(a, 0x1b));
         record(_mm_shufflelo_epi16(a, 0x1b));
+#ifndef ZEND_ONLY
         record(_mm_minpos_epu16(b));
         record(_mm_blend_epi16(a, b, 0xa5));
         for (int mode = 0; mode < 128; mode++) {
@@ -51,10 +57,13 @@ int main(void)
             hash ^= (uint64_t)_mm_cmpestri(a, (k % 16) + 1, b, 16 - (k % 16), mode);
             hash ^= (uint64_t)_mm_cmpistri(a, b, mode);
         }
+#endif
     }
+#ifndef ZEND_ONLY
     _mm_mfence();
     _mm_lfence();
     _mm_pause();
+#endif
     printf("%016llx\n", (unsigned long long)hash);
     return 0;
 }

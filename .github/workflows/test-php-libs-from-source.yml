@@ -1,50 +1,70 @@
-name: ARM64 PHP SDK launcher probe
+name: ARM64 PHP SIMD compatibility probe
 on: workflow_dispatch
 jobs:
-  sdk:
-    name: SDK ${{ matrix.php }}
+  windows:
     strategy:
       fail-fast: false
       matrix:
         include:
-          - php: '8.2'
-            runner: windows-11-arm
-          - php: '8.4'
+          - php: '8.5'
             runner: windows-11-arm
           - php: '8.6'
             runner: windows-11-vs2026-arm
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
+      - name: Resolve toolset
+        id: vs
+        shell: pwsh
+        run: |
+          Import-Module ./php/BuildPhp -Force
+          $vs = Get-VsVersion -PhpVersion '${{ matrix.php }}' -Arch arm64
+          Add-Content $env:GITHUB_OUTPUT "toolset=$($vs.toolset)"
+      - uses: ilammy/msvc-dev-cmd@v1
         with:
-          ref: test/arm64-series-dependencies
-          path: builder
-      - name: Build and run PGO program through the PHP SDK
+          arch: arm64
+          toolset: ${{ steps.vs.outputs.toolset }}
+      - name: Check both SIMD headers with MSVC
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          Import-Module ./builder/php/BuildPhp -Force
-          $vs = Get-VsVersion -PhpVersion '${{ matrix.php }}' -Arch arm64
-          Get-PhpSdk -Arch arm64
-          @'
-          #include <windows.h>
-          #include <stdio.h>
-          int main(void) {
-              volatile int value = 0;
-              for (int i = 0; i < 100; i++) value += i;
-              printf("PHP SDK ARM64 PGO runtime works: %d\n", value);
-              return value != 4950;
+          foreach ($header in 'Zend/zend_simd.h', 'ext/bcmath/libbcmath/src/xsse.h') {
+            Invoke-WebRequest "https://raw.githubusercontent.com/shivammathur/php-src/fix/windows-arm64-master/$header" -OutFile xsse.h
+            $flags = @(if ($header.StartsWith('Zend/')) { '/DZEND_ONLY' })
+            & cl.exe /nologo /std:c17 /O2 /Zc:preprocessor /I. @flags simd-probe.c /Fe:simd-probe.exe
+            if ($LASTEXITCODE) { throw "MSVC compile failed: $header" }
+            $result = & .\simd-probe.exe
+            $expected = if ($flags.Count) { 'f98c6f5a34dc83e2' } else { 'd26d9d7037b6204b' }
+            Write-Host "$header SIMD result: $result"
+            if ($LASTEXITCODE -or $result -ne $expected) { throw "MSVC SIMD result mismatch: $header" }
           }
-          '@ | Set-Content sdk-probe.c
-          @'
-          @echo off
-          where cl.exe
-          where pgort140.dll
-          echo SDK: %WindowsSDKVersion%
-          echo Toolset: %VCToolsVersion%
-          cl.exe /nologo /O2 /GL sdk-probe.c /link /LTCG /GENPROFILE /OUT:sdk-probe.exe
-          if errorlevel 1 exit /b 1
-          sdk-probe.exe
-          exit /b %errorlevel%
-          '@ | Set-Content sdk-probe.bat
-          Invoke-PhpSdkStarter -BuildDirectory (Get-Location).Path -VsConfig $vs -Arch arm64 -Task sdk-probe.bat
+  linux:
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v6
+      - name: Compare both original and patched SIMD headers
+        shell: bash
+        run: |
+          set -euo pipefail
+          for header in Zend/zend_simd.h ext/bcmath/libbcmath/src/xsse.h; do
+            flags=(-std=c17 -O2 -Wall -Werror)
+            expected=d26d9d7037b6204b
+            if [[ '${{ matrix.cc }}' == gcc ]]; then flags+=(-Wno-error=maybe-uninitialized); fi
+            if [[ "$header" == Zend/* ]]; then flags+=(-DZEND_ONLY); expected=f98c6f5a34dc83e2; fi
+            curl -fsSL "https://raw.githubusercontent.com/php/php-src/8db886e419a6aba1903ec97754b0548051b55f9c/$header" -o xsse.h
+            ${{ matrix.cc }} "${flags[@]}" simd-probe.c -o original
+            ${{ matrix.cc }} "${flags[@]}" -S simd-probe.c -o original.s
+            original=$(./original)
+            curl -fsSL "https://raw.githubusercontent.com/shivammathur/php-src/fix/windows-arm64-master/$header" -o xsse.h
+            ${{ matrix.cc }} "${flags[@]}" simd-probe.c -o patched
+            ${{ matrix.cc }} "${flags[@]}" -S simd-probe.c -o patched.s
+            patched=$(./patched)
+            echo "$header original: $original; patched: $patched"
+            test "$original" = "$patched"
+            test "$patched" = "$expected"
+            diff -u <(sed '/^\/\/ [0-9]/d' original.s) <(sed '/^\/\/ [0-9]/d' patched.s)
+          done
