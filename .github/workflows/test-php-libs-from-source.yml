@@ -1,5 +1,5 @@
 name: Relink the preserved ARM64 PGO compiler failure
-run-name: Isolate profile-dependent ARM64 optimizer crash
+run-name: Isolate ARM64 hash loop compiler failure
 on:
   workflow_dispatch:
     inputs:
@@ -109,12 +109,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: aggressive-profile
+          - name: no-profile-control
             host: arm64
-            optimization: /LTCG /USEPROFILE:AGGRESSIVE
-          - name: without-profile-control
+          - name: recompile-baseline
             host: arm64
-            optimization: /LTCG
+          - name: hash-no-vector
+            host: arm64
+          - name: hash-no-inline
+            host: arm64
     runs-on: windows-11-arm
     steps:
       - uses: actions/checkout@v6
@@ -162,14 +164,43 @@ jobs:
             Sort-Object FullName | Get-FileHash | ConvertTo-Json -Depth 4 | Set-Content object-hashes.json
           Write-Host "Object manifest SHA256: $((Get-FileHash object-hashes.json).Hash)"
 
-      - name: Select diagnostic optimizer settings
+      - name: Isolate optimization of the reported hash function
         shell: pwsh
+        env:
+          VARIANT: ${{ matrix.name }}
         run: |
-          $path = 'probe/pgo-relink.bat'
-          $text = [IO.File]::ReadAllText($path)
-          [IO.File]::WriteAllText($path, $text.Replace('/LTCG:PGUPDATE', '${{ matrix.optimization }}'))
-          Get-Content $path
-          (Get-Item (Get-Command link.exe).Source).VersionInfo | Format-List FileVersion, ProductVersion
+          $variant = $env:VARIANT
+          if ($variant -eq 'no-profile-control') {
+            $path = 'probe/pgo-relink.bat'
+            $text = [IO.File]::ReadAllText($path).Replace('/LTCG:PGUPDATE', '/LTCG')
+            $text = $text -replace '/PGD:[^ ]+ ', ''
+            if ($text -match '/PGD:|/USEPROFILE|/LTCG:PG') { throw 'Control still uses PGO' }
+            [IO.File]::WriteAllText($path, $text)
+          } else {
+            Copy-Item replay/main/config.w32.h main/config.w32.h
+            $path = 'Zend/zend_hash.c'
+            $text = [IO.File]::ReadAllText($path)
+            $signature = 'static zend_always_inline Bucket *zend_hash_index_find_bucket(const HashTable *ht, zend_ulong h)'
+            $start = $text.IndexOf($signature)
+            if ($start -lt 0) { throw 'Missing diagnostic function' }
+            $end = $text.IndexOf("`n}", $start) + 2
+            $original = $text.Substring($start, $end - $start)
+            $replacement = $original
+            if ($variant -eq 'hash-no-vector') {
+              $replacement = $original.Replace("`twhile (idx != HT_INVALID_IDX) {", "#if defined(_M_ARM64) && defined(_MSC_VER) && !defined(__clang__)`n# pragma loop(no_vector)`n#endif`n`twhile (idx != HT_INVALID_IDX) {")
+            } elseif ($variant -eq 'hash-no-inline') {
+              $replacement = $original.Replace($signature, "#if defined(_M_ARM64) && defined(_MSC_VER) && !defined(__clang__)`n$($signature.Replace('zend_always_inline', '__declspec(noinline)'))`n#else`n$signature`n#endif")
+            }
+            if ($variant -ne 'recompile-baseline' -and $replacement -eq $original) { throw 'Diagnostic edit did not apply' }
+            [IO.File]::WriteAllText($path, $text.Substring(0, $start) + $replacement + $text.Substring($end))
+            & git diff -- Zend/zend_hash.c | Tee-Object source-diff.txt
+            if ($LASTEXITCODE) { throw 'Cannot record source difference' }
+            Remove-Item 'C:/a/php-windows-builder/obj/Release_TS/Zend/zend_hash.obj'
+            & cmd /c (Join-Path $env:GITHUB_WORKSPACE 'probe/pgo-compile-hash.bat') 2>&1 | Tee-Object compile.log
+            if ($LASTEXITCODE) { throw 'Diagnostic recompile failed' }
+            Get-FileHash 'C:/a/php-windows-builder/obj/Release_TS/Zend/zend_hash.obj' | Format-List
+          }
+          Get-Content probe/pgo-relink.bat
 
       - name: Force the original PGO link and check the resulting ARM64 binary
         shell: pwsh
@@ -191,3 +222,5 @@ jobs:
             relink.log
             headers.log
             object-hashes.json
+            compile.log
+            source-diff.txt
