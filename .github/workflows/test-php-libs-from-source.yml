@@ -1,5 +1,5 @@
-name: Diagnose full PHP ARM64 PGO training
-run-name: Compare full ARM64 PGO training settings
+name: Diagnose VS18 ARM64 GD PGO
+run-name: Compare VS18 ARM64 PGO merge weighting
 on:
   workflow_dispatch:
     inputs:
@@ -108,9 +108,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [arm64]
-        ts: [ts]
-        mode: [exact, no-path, merge-unit]
+        include:
+          - {arch: arm64, ts: ts, mode: baseline}
+          - {arch: arm64, ts: ts, mode: merge-unit}
+          - {arch: arm64, ts: nts, mode: merge-unit}
     runs-on: ${{ needs.resolve-runner.outputs.runner }}
     steps:
       - name: Configure PHP source line endings
@@ -140,18 +141,9 @@ jobs:
           key: ${{ needs.deps.outputs.cache-key }}
           fail-on-cache-miss: true
 
-      - name: Select diagnostic profile settings
+      - name: Select diagnostic merge weighting
         shell: pwsh
         run: |
-          if ('${{ matrix.mode }}' -ne 'merge-unit') {
-            $path = 'win32/build/confutils.js'
-            $code = [IO.File]::ReadAllText($path)
-            if ([regex]::Matches($code, '/LTCG:PGINSTRUMENT').Count -ne 1) { throw 'Unexpected core instrumentation flags' }
-            $flags = if ('${{ matrix.mode }}' -eq 'exact') { '/LTCG /GENPROFILE:EXACT' } else { '/LTCG /GENPROFILE:NOPATH' }
-            [IO.File]::WriteAllText($path, $code.Replace('/LTCG:PGINSTRUMENT', $flags))
-            & git diff -- win32/build/confutils.js
-            if ($LASTEXITCODE) { throw 'Cannot record diagnostic source overlay' }
-          }
           $file = 'builder/php/BuildPhp/private/Invoke-PhpSdkStarter.ps1'
           $code = Get-Content $file -Raw
           $probe = @'
@@ -159,9 +151,10 @@ jobs:
                   if ($env:PGO_PROFILE_MODE -eq 'merge-unit') {
                       $pgoFile = Join-Path $BuildDirectory 'php-sdk/lib/php/libsdk/SDK/Build/PGO/Tool/PGO.php'
                       $text = [IO.File]::ReadAllText($pgoFile)
-                      if (-not $text.Contains('pgomgr /merge:1000')) { throw 'Expected PGO merge weight missing' }
-                      [IO.File]::WriteAllText($pgoFile, $text.Replace('pgomgr /merge:1000', 'pgomgr /merge'))
-                      Write-Host 'Diagnostic SDK PGO merge weight changed from 1000 to 1'
+                      $old = '$weight = \SDK\Config::getCurrentArchName() === "arm64" && \SDK\Config::getCurrentCrtName() === "vs17" ? 1 : 1000;'
+                      if (-not $text.Contains($old)) { throw 'Expected SDK PGO merge condition missing' }
+                      [IO.File]::WriteAllText($pgoFile, $text.Replace($old, '$weight = 1;'))
+                      Write-Host 'Diagnostic VS18 SDK PGO merge weight changed from 1000 to 1'
                   }
           '@
           if (-not $code.Contains('        $toolsetArgs =')) { throw 'Missing SDK initialization hook' }
@@ -191,9 +184,8 @@ jobs:
         run: |
           $obj = Join-Path (Split-Path $env:GITHUB_WORKSPACE -Parent) 'obj'
           if (Test-Path $obj) {
-            $pgd = Join-Path $obj 'Release_TS/php8ts.pgd'
-            if (Test-Path $pgd) { Get-FileHash $pgd | Format-List }
-            $files = @($obj, 'Makefile', 'Makefile.objects', 'config.nice.bat', 'config.ts.bat', 'main/config.w32.h' | Where-Object { Test-Path $_ })
+            Get-ChildItem $obj -Recurse -Filter '*.pgd' | Get-FileHash | Format-Table -AutoSize
+            $files = @($obj, 'Makefile', 'Makefile.objects', 'config.nice.bat', 'config.ts.bat', 'config.nts.bat', 'main/config.w32.h' | Where-Object { Test-Path $_ })
             & 7z a -t7z -mx=1 build-state.7z @files
             if ($LASTEXITCODE) { throw 'Cannot archive the compiler state' }
           }
@@ -201,5 +193,5 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: pgo-state-${{ matrix.mode }}
+          name: pgo-state-${{ matrix.mode }}-${{ matrix.ts }}
           path: build-state.7z
