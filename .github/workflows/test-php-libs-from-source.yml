@@ -1,70 +1,210 @@
-name: ARM64 PHP SIMD compatibility probe
-on: workflow_dispatch
+name: Diagnose PHP ARM64 PGO compiler hosts
+run-name: Diagnose PHP ARM64 PGO compiler hosts
+on:
+  workflow_dispatch:
+    inputs:
+      php-src-repository:
+        description: 'php-src repository to source builds and tests from'
+        required: true
+      php-src-ref:
+        description: 'Branch, tag, or SHA in the php-src repository to source builds and tests from'
+        required: true
+      libs-build-runs:
+        description: 'Comma-separated list of GitHub Actions run IDs from winlibs/winlib-builder'
+        required: false
+      sbom:
+        type: choice
+        options: ['true', 'false']
+        description: Add SBOM files to binary archives
+        required: false
+        default: 'true'
+
 jobs:
-  windows:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - php: '8.5'
-            runner: windows-11-arm
-          - php: '8.6'
-            runner: windows-11-vs2026-arm
-    runs-on: ${{ matrix.runner }}
+  resolve-runner:
+    runs-on: ubuntu-latest
+    outputs:
+      runner: ${{ steps.resolve.outputs.runner }}
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - name: Checkout PHP source
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ inputs.php-src-repository }}
+          ref: ${{ inputs.php-src-ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          path: php-src
+          fetch-depth: 1
+          sparse-checkout: main/php_version.h
+          sparse-checkout-cone-mode: false
+
+      - name: Resolve runner
+        id: resolve
+        shell: bash
+        run: |
+          read -r major minor < <(awk '/^#define PHP_(MAJOR|MINOR)_VERSION/ { v[++i]=$3 } END { print v[1], v[2] }' php-src/main/php_version.h)
+          runner="$([ "$major" -gt 8 ] || { [ "$major" -eq 8 ] && [ "$minor" -ge 6 ]; } && echo windows-11-vs2026-arm || echo windows-11-arm)"
+          echo "PHP source version: $major.$minor; runner: $runner"
+          echo "runner=$runner" >> "$GITHUB_OUTPUT"
+          echo "version=$(awk '/^#define PHP_VERSION / { gsub(/"/, "", $3); print $3 }' php-src/main/php_version.h)" >> "$GITHUB_OUTPUT"
+
+  deps:
+    needs: resolve-runner
+    runs-on: ${{ needs.resolve-runner.outputs.runner }}
+    outputs:
+      cache-dir: ${{ steps.cache-key.outputs.cache-dir }}
+      cache-key: ${{ steps.restore.outputs.cache-primary-key }}
     steps:
       - uses: actions/checkout@v6
-      - name: Resolve toolset
-        id: vs
+        with:
+          ref: test/arm64-series-dependencies
+
+      - name: Get dependency cache key
+        id: cache-key
         shell: pwsh
         run: |
           Import-Module ./php/BuildPhp -Force
-          $vs = Get-VsVersion -PhpVersion '${{ matrix.php }}' -Arch arm64
-          Add-Content $env:GITHUB_OUTPUT "toolset=$($vs.toolset)"
-      - uses: ilammy/msvc-dev-cmd@v1
+          $info = Get-DepsCacheInfo -PhpVersion '${{ needs.resolve-runner.outputs.version }}' -Arch arm64 -LibsBuildRuns '${{ inputs.libs-build-runs }}' -IncludeDefaultRunsKey
+          Set-Content packages.txt ($info.Packages -join "`n")
+          Add-Content $env:GITHUB_OUTPUT "cache-key=$($info.CacheKey)"
+          Add-Content $env:GITHUB_OUTPUT "cache-dir=$($info.CacheDir)"
+          Add-Content $env:GITHUB_OUTPUT "vs=$($info.VsVersion)"
+
+      - name: Restore dependency cache
+        id: restore
+        uses: actions/cache/restore@v5
         with:
-          arch: arm64
-          toolset: ${{ steps.vs.outputs.toolset }}
-      - name: Check both SIMD headers with MSVC
+          path: ${{ steps.cache-key.outputs.cache-dir }}
+          key: ${{ steps.cache-key.outputs.cache-key }}-${{ hashFiles('packages.txt') }}
+
+      - name: Download dependencies
+        if: steps.restore.outputs.cache-hit != 'true'
         shell: pwsh
+        env:
+          LIBS_BUILD_RUNS: ${{ inputs.libs-build-runs }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $ErrorActionPreference = 'Stop'
-          foreach ($header in 'Zend/zend_simd.h', 'ext/bcmath/libbcmath/src/xsse.h') {
-            Invoke-WebRequest "https://raw.githubusercontent.com/shivammathur/php-src/fix/windows-arm64-master/$header" -OutFile xsse.h
-            $flags = @(if ($header.StartsWith('Zend/')) { '/DZEND_ONLY' })
-            & cl.exe /nologo /std:c17 /O2 /Zc:preprocessor /I. @flags simd-probe.c /Fe:simd-probe.exe
-            if ($LASTEXITCODE) { throw "MSVC compile failed: $header" }
-            $result = & .\simd-probe.exe
-            $expected = if ($flags.Count) { 'f98c6f5a34dc83e2' } else { 'd26d9d7037b6204b' }
-            Write-Host "$header SIMD result: $result"
-            if ($LASTEXITCODE -or $result -ne $expected) { throw "MSVC SIMD result mismatch: $header" }
+          $rate = Invoke-RestMethod https://api.github.com/rate_limit -Headers @{Authorization="Bearer $env:GITHUB_TOKEN"}
+          $required = 12 * @('${{ inputs.libs-build-runs }}' -split ',' | Where-Object { $_ }).Count
+          if ($rate.resources.core.remaining -lt $required) {
+            $reset = [DateTimeOffset]::FromUnixTimeSeconds($rate.resources.core.reset)
+            $wait = [Math]::Max(1, [int][Math]::Ceiling(($reset - [DateTimeOffset]::UtcNow).TotalSeconds) + 5)
+            Write-Host "Waiting $wait seconds for the GitHub API quota to reset before parallel dependency downloads."
+            Start-Sleep -Seconds $wait
           }
-  linux:
-    runs-on: ubuntu-24.04-arm
+          Import-Module ./php/BuildPhp -Force
+          & (Get-Module BuildPhp) {
+            Add-PhpDeps -PhpVersion '${{ needs.resolve-runner.outputs.version }}' -VsVersion '${{ steps.cache-key.outputs.vs }}' -Arch arm64 -Destination '${{ steps.cache-key.outputs.cache-dir }}'
+          }
+
+      - name: Save dependency cache
+        if: steps.restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.cache-key.outputs.cache-dir }}
+          key: ${{ steps.restore.outputs.cache-primary-key }}
+
+  php:
+    needs: [resolve-runner, deps]
     strategy:
       fail-fast: false
       matrix:
-        cc: [gcc, clang]
+        arch: [arm64]
+        ts: [ts]
+        host: [native, x64]
+    runs-on: ${{ needs.resolve-runner.outputs.runner }}
     steps:
-      - uses: actions/checkout@v6
-      - name: Compare both original and patched SIMD headers
-        shell: bash
+      - name: Configure PHP source line endings
+        shell: pwsh
         run: |
-          set -euo pipefail
-          for header in Zend/zend_simd.h ext/bcmath/libbcmath/src/xsse.h; do
-            flags=(-std=c17 -O2 -Wall -Werror)
-            expected=d26d9d7037b6204b
-            if [[ '${{ matrix.cc }}' == gcc ]]; then flags+=(-Wno-error=maybe-uninitialized); fi
-            if [[ "$header" == Zend/* ]]; then flags+=(-DZEND_ONLY); expected=f98c6f5a34dc83e2; fi
-            curl -fsSL "https://raw.githubusercontent.com/php/php-src/8db886e419a6aba1903ec97754b0548051b55f9c/$header" -o xsse.h
-            ${{ matrix.cc }} "${flags[@]}" simd-probe.c -o original
-            ${{ matrix.cc }} "${flags[@]}" -S simd-probe.c -o original.s
-            original=$(./original)
-            curl -fsSL "https://raw.githubusercontent.com/shivammathur/php-src/fix/windows-arm64-master/$header" -o xsse.h
-            ${{ matrix.cc }} "${flags[@]}" simd-probe.c -o patched
-            ${{ matrix.cc }} "${flags[@]}" -S simd-probe.c -o patched.s
-            patched=$(./patched)
-            echo "$header original: $original; patched: $patched"
-            test "$original" = "$patched"
-            test "$patched" = "$expected"
-            diff -u <(sed '/^\/\/ [0-9]/d' original.s) <(sed '/^\/\/ [0-9]/d' patched.s)
-          done
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+
+      - name: Checkout PHP source
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ inputs.php-src-repository }}
+          ref: ${{ inputs.php-src-ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          path: builder
+          ref: test/arm64-series-dependencies
+
+      - name: Restore dependency cache
+        id: deps
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ needs.deps.outputs.cache-dir }}
+          key: ${{ needs.deps.outputs.cache-key }}
+          fail-on-cache-miss: true
+
+      - name: Select compiler host for the probe
+        shell: pwsh
+        run: |
+          $file = 'builder/php/BuildPhp/private/Invoke-PhpSdkStarter.ps1'
+          $code = Get-Content $file -Raw
+          $probe = @'
+                  Add-Content $env:GITHUB_ENV "PROBE_SDK_DIR=$BuildDirectory\php-sdk"
+                  if ($env:PROBE_HOST -eq 'x64') {
+                      $shell = Join-Path $BuildDirectory 'php-sdk/bin/phpsdk_setshell.bat'
+                      $text = [IO.File]::ReadAllText($shell)
+                      if (-not $text.Contains('LEQ 16 set HOST_ARCH_NAME=amd64')) { throw 'Expected host condition missing' }
+                      [IO.File]::WriteAllText($shell, $text.Replace('LEQ 16 set HOST_ARCH_NAME=amd64', 'LEQ 17 set HOST_ARCH_NAME=amd64'))
+                  }
+          '@
+          $code = $code.Replace('        $toolsetArgs =', "$probe`n        `$toolsetArgs =")
+          Set-Content $file $code
+
+      - name: Build
+        uses: ./builder/php
+        with:
+          arch: ${{ matrix.arch }}
+          ts: ${{ matrix.ts }}
+          libs-build-runs: ${{ inputs.libs-build-runs }}
+          sbom: ${{ inputs.sbom }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          PROBE_HOST: ${{ matrix.host }}
+          PHP_BUILD_PROVIDER: "The PHP Group"
+          DEPS_DIR: ${{ needs.deps.outputs.cache-dir }}
+          DEPS_CACHE_HIT: ${{ steps.deps.outputs.cache-hit }}
+
+      - name: Retry failed native PGO link with the x64 compiler host
+        if: failure() && matrix.host == 'native'
+        shell: pwsh
+        run: |
+          $pgd = Join-Path (Split-Path $env:GITHUB_WORKSPACE -Parent) 'obj/Release_TS/php8ts.pgd'
+          if (-not (Test-Path $pgd)) { throw 'PGO database was not generated' }
+          Get-FileHash $pgd | Format-List
+          $shell = Join-Path $env:PROBE_SDK_DIR 'bin/phpsdk_setshell.bat'
+          $text = [IO.File]::ReadAllText($shell)
+          [IO.File]::WriteAllText($shell, $text.Replace('LEQ 16 set HOST_ARCH_NAME=amd64', 'LEQ 17 set HOST_ARCH_NAME=amd64'))
+          @'
+          @echo off
+          where cl
+          where link
+          nmake
+          if errorlevel 1 exit /b 1
+          nmake snap
+          '@ | Set-Content retry-link.bat
+          & "$env:PROBE_SDK_DIR/phpsdk-starter.bat" -c vs17 -a arm64 -s 14.44.35207 -t retry-link.bat
+          if ($LASTEXITCODE) { throw "Cross-hosted relink failed: $LASTEXITCODE" }
+          Get-FileHash $pgd | Format-List
+
+      - name: Preserve failed build state
+        if: failure()
+        shell: pwsh
+        run: |
+          $obj = Join-Path (Split-Path $env:GITHUB_WORKSPACE -Parent) 'obj'
+          if (Test-Path $obj) {
+            & 7z a -t7z -mx=1 build-state.7z $obj Makefile Makefile.objects config.nice.bat config.ts.bat main/config.w32.h
+            if ($LASTEXITCODE) { throw 'Cannot archive the compiler failure state' }
+          }
+
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: pgo-state-${{ matrix.host }}
+          path: build-state.7z
