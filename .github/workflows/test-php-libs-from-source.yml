@@ -1,5 +1,5 @@
-name: Relink the preserved ARM64 PGO compiler failure
-run-name: Diagnose ARM64 PGO profile generation
+name: Diagnose full PHP ARM64 PGO training
+run-name: Compare full ARM64 PGO training settings
 on:
   workflow_dispatch:
     inputs:
@@ -103,124 +103,103 @@ jobs:
           path: ${{ steps.cache-key.outputs.cache-dir }}
           key: ${{ steps.restore.outputs.cache-primary-key }}
 
-  relink:
+  php:
     needs: [resolve-runner, deps]
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - name: legacy-profile
-            host: arm64
-            instrument: /LTCG:PGINSTRUMENT
-          - name: modern-profile
-            host: arm64
-            instrument: /LTCG /GENPROFILE
-          - name: exact-profile
-            host: arm64
-            instrument: /LTCG /GENPROFILE:EXACT
-          - name: no-path-profile
-            host: arm64
-            instrument: /LTCG /GENPROFILE:NOPATH
-    runs-on: windows-11-arm
+        arch: [arm64]
+        ts: [ts]
+        mode: [exact, no-path, merge-unit]
+    runs-on: ${{ needs.resolve-runner.outputs.runner }}
     steps:
-      - uses: actions/checkout@v6
+      - name: Configure PHP source line endings
+        shell: pwsh
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+
+      - name: Checkout PHP source
+        uses: actions/checkout@v6
         with:
           repository: ${{ inputs.php-src-repository }}
           ref: ${{ inputs.php-src-ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: actions/checkout@v6
+      - name: Checkout
+        uses: actions/checkout@v6
         with:
-          path: probe
+          path: builder
+          ref: test/arm64-series-dependencies
 
-      - uses: actions/cache/restore@v5
+      - name: Restore dependency cache
+        id: deps
+        uses: actions/cache/restore@v5
         with:
           path: ${{ needs.deps.outputs.cache-dir }}
           key: ${{ needs.deps.outputs.cache-key }}
           fail-on-cache-miss: true
 
-      - uses: actions/download-artifact@v8
+      - name: Select diagnostic profile settings
+        shell: pwsh
+        run: |
+          if ('${{ matrix.mode }}' -ne 'merge-unit') {
+            $path = 'win32/build/confutils.js'
+            $code = [IO.File]::ReadAllText($path)
+            if ([regex]::Matches($code, '/LTCG:PGINSTRUMENT').Count -ne 1) { throw 'Unexpected core instrumentation flags' }
+            $flags = if ('${{ matrix.mode }}' -eq 'exact') { '/LTCG /GENPROFILE:EXACT' } else { '/LTCG /GENPROFILE:NOPATH' }
+            [IO.File]::WriteAllText($path, $code.Replace('/LTCG:PGINSTRUMENT', $flags))
+            & git diff -- win32/build/confutils.js
+            if ($LASTEXITCODE) { throw 'Cannot record diagnostic source overlay' }
+          }
+          $file = 'builder/php/BuildPhp/private/Invoke-PhpSdkStarter.ps1'
+          $code = Get-Content $file -Raw
+          $probe = @'
+                  Add-Content $env:GITHUB_ENV "PROBE_SDK_DIR=$BuildDirectory/php-sdk"
+                  if ($env:PGO_PROFILE_MODE -eq 'merge-unit') {
+                      $pgoFile = Join-Path $BuildDirectory 'php-sdk/lib/php/libsdk/SDK/Build/PGO/Tool/PGO.php'
+                      $text = [IO.File]::ReadAllText($pgoFile)
+                      if (-not $text.Contains('pgomgr /merge:1000')) { throw 'Expected PGO merge weight missing' }
+                      [IO.File]::WriteAllText($pgoFile, $text.Replace('pgomgr /merge:1000', 'pgomgr /merge'))
+                      Write-Host 'Diagnostic SDK PGO merge weight changed from 1000 to 1'
+                  }
+          '@
+          if (-not $code.Contains('        $toolsetArgs =')) { throw 'Missing SDK initialization hook' }
+          $code = $code.Replace('        $toolsetArgs =', "$probe`n        `$toolsetArgs =")
+          Set-Content $file $code
+          $action = 'builder/php/action.yml'
+          $content = [IO.File]::ReadAllText($action)
+          [IO.File]::WriteAllText($action, $content.Replace('name: artifacts-', 'name: artifacts-${{ matrix.mode }}-'))
+
+      - name: Build
+        uses: ./builder/php
         with:
-          repository: shivammathur/php-windows-builder
-          run-id: 38444329489
-          name: pgo-state-native
-          path: preserved
+          arch: ${{ matrix.arch }}
+          ts: ${{ matrix.ts }}
+          libs-build-runs: ${{ inputs.libs-build-runs }}
+          sbom: ${{ inputs.sbom }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: ${{ matrix.host }}
-          toolset: 14.44.35207
-
-      - name: Restore identical objects, profile and libraries
-        shell: pwsh
-        run: |
-          & 7z x preserved/build-state.7z -oreplay -y
-          if ($LASTEXITCODE) { throw 'Cannot restore the preserved compiler state' }
-          $parent = Split-Path $env:GITHUB_WORKSPACE -Parent
-          if ($parent -ne [IO.Path]::GetFullPath('C:/a/php-windows-builder')) { throw "Replay paths differ: $parent" }
-          Move-Item replay/obj "$parent/obj"
-          Copy-Item '${{ needs.deps.outputs.cache-dir }}' "$parent/deps" -Recurse
-          $pgd = "$parent/obj/Release_TS/php8ts.pgd"
-          $hash = (Get-FileHash $pgd).Hash
-          if ($hash -ne '05FE5FD789AE61696E22D05CE036F067121517EF01BCE868EE12E1211B5302FB') { throw 'Profile changed' }
-          Write-Host "Preserved PHP PGO profile SHA256: $hash"
-          Get-ChildItem "$parent/obj/Release_TS" -Filter *.obj -Recurse |
-            Sort-Object FullName | Get-FileHash | ConvertTo-Json -Depth 4 | Set-Content object-hashes.json
-          Write-Host "Object manifest SHA256: $((Get-FileHash object-hashes.json).Hash)"
-
-      - name: Collect a fresh profile with the preserved objects
-        shell: pwsh
         env:
-          INSTRUMENT_FLAGS: ${{ matrix.instrument }}
-        run: |
-          $out = 'C:/a/php-windows-builder/obj/Release_TS'
-          $pgd = "$out/php8ts.pgd"
-          Copy-Item $pgd original-php8ts.pgd
-          Remove-Item $pgd
-          Get-ChildItem $out -Filter 'php8ts!*.pgc' | Remove-Item
-          $original = [IO.File]::ReadAllText('probe/pgo-relink.bat')
-          [IO.File]::WriteAllText('probe/pgo-instrument.bat', $original.Replace('/LTCG:PGUPDATE', $env:INSTRUMENT_FLAGS))
-          Get-Content probe/pgo-instrument.bat
-          & cmd /c (Join-Path $env:GITHUB_WORKSPACE 'probe/pgo-instrument.bat') 2>&1 | Tee-Object instrument.log
-          if ($LASTEXITCODE) { throw 'Instrumentation link failed' }
-          $runtime = Join-Path $env:VCToolsInstallDir 'bin/arm64'
-          if (-not (Test-Path "$runtime/pgort140.dll")) { throw 'Missing matching ARM64 PGO runtime' }
-          $env:PATH = "$runtime;$env:PATH"
-          & "$out/php.exe" -n Zend/bench.php 2>&1 | Tee-Object training.log
-          if ($LASTEXITCODE) { throw 'Benchmark training failed' }
-          $counts = @(Get-ChildItem $out -Filter 'php8ts!*.pgc')
-          if (-not $counts.Count) { throw 'Training produced no counters' }
-          Get-FileHash $counts.FullName | Format-List
-          & pgomgr /merge $pgd 2>&1 | Tee-Object merge.log
-          if ($LASTEXITCODE) { throw 'Profile merge failed' }
-          Get-FileHash $pgd | Format-List
-          & pgomgr /summary $pgd 2>&1 | Tee-Object profile-summary.log
-          if ($LASTEXITCODE) { throw 'Profile summary failed' }
-          $counts | Remove-Item
-          Copy-Item $pgd fresh-php8ts.pgd
+          PGO_PROFILE_MODE: ${{ matrix.mode }}
+          PHP_BUILD_PROVIDER: "The PHP Group"
+          DEPS_DIR: ${{ needs.deps.outputs.cache-dir }}
+          DEPS_CACHE_HIT: ${{ steps.deps.outputs.cache-hit }}
 
-      - name: Force the original PGO link and check the resulting ARM64 binary
+      - name: Record profile data and build state
+        if: always()
         shell: pwsh
         run: |
-          & cmd /c (Join-Path $env:GITHUB_WORKSPACE 'probe/pgo-relink.bat') 2>&1 | Tee-Object relink.log
-          $linkExit = $LASTEXITCODE
-          if ($linkExit) { throw "Original PGO link failed: $linkExit" }
-          $dll = 'C:/a/php-windows-builder/obj/Release_TS/php8ts.dll'
-          & dumpbin /headers $dll | Tee-Object headers.log
-          if ($LASTEXITCODE) { throw 'Invalid output DLL' }
-          & 'C:/a/php-windows-builder/obj/Release_TS/php.exe' -n -r 'echo PHP_VERSION, PHP_EOL; $a=range(0,10000); echo array_sum($a), PHP_EOL;'
-          if ($LASTEXITCODE) { throw 'Relinked PHP cannot execute' }
+          $obj = Join-Path (Split-Path $env:GITHUB_WORKSPACE -Parent) 'obj'
+          if (Test-Path $obj) {
+            $pgd = Join-Path $obj 'Release_TS/php8ts.pgd'
+            if (Test-Path $pgd) { Get-FileHash $pgd | Format-List }
+            $files = @($obj, 'Makefile', 'Makefile.objects', 'config.nice.bat', 'config.ts.bat', 'main/config.w32.h' | Where-Object { Test-Path $_ })
+            & 7z a -t7z -mx=1 build-state.7z @files
+            if ($LASTEXITCODE) { throw 'Cannot archive the compiler state' }
+          }
 
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: pgo-profile-${{ matrix.name }}
-          path: |
-            relink.log
-            headers.log
-            object-hashes.json
-            instrument.log
-            training.log
-            merge.log
-            profile-summary.log
-            fresh-php8ts.pgd
+          name: pgo-state-${{ matrix.mode }}
+          path: build-state.7z
