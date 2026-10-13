@@ -33,7 +33,18 @@ jobs:
         with:
           path: ${{ steps.plan.outputs.cache-dir }}
           key: ${{ steps.plan.outputs.cache-key }}-${{ hashFiles('packages.txt') }}
-      - name: Prefer target DLLs after installing emulated Firebird server
+      - name: Install native Firebird client for remote tests
+        shell: pwsh
+        run: |
+          Invoke-WebRequest 'https://github.com/FirebirdSQL/snapshots/releases/download/snapshot-master/Firebird-6.0.0.2190-0-1d6051b-windows-arm64.zip' -OutFile firebird-arm64.zip
+          $hash = (Get-FileHash firebird-arm64.zip).Hash
+          if ($hash -ne '5BB0D4B013F3BE3A03B2F56BC180A77FD6CB2777BEC34D51490A7C715AA92ADA') { throw 'Firebird client changed' }
+          Expand-Archive firebird-arm64.zip C:/Firebird-arm64
+          $bytes = [IO.File]::ReadAllBytes('C:/Firebird-arm64/fbclient.dll')
+          $offset = [BitConverter]::ToInt32($bytes, 60)
+          if ([BitConverter]::ToUInt16($bytes, $offset + 4) -ne 43620) { throw 'Firebird client is not ARM64' }
+          Get-FileHash C:/Firebird-arm64/fbclient.dll
+      - name: Select native Firebird and installed .NET runtime
         shell: pwsh
         run: |
           $path = 'php/BuildPhp/private/Set-PhpExtTestEnvironment.ps1'
@@ -43,11 +54,17 @@ jobs:
           $replacement = @'
                       & $setup.Command @parameters
                       if ($Arch -eq 'arm64' -and $setup.Command -eq 'Set-FirebirdTestEnvironment') {
-                          Add-Path "$env:DEPS_DIR\bin"
+                          Add-Path 'C:/Firebird-arm64'
                       }
           '@
           [IO.File]::WriteAllText($path, $code.Replace($needle, $replacement))
           git diff -- $path
+          $ini = 'php/BuildPhp/private/Set-PhpIniForTests.ps1'
+          $code = [IO.File]::ReadAllText($ini)
+          $needle = '        Copy-Item $ini $testIni -Force'
+          if (-not $code.Contains($needle)) { throw 'Missing test INI hook' }
+          [IO.File]::WriteAllText($ini, $code.Replace($needle, "$needle`n        if (`$Arch -eq 'arm64') { Add-Content `$testIni 'com.dotnet_version=v4.0.30319' }"))
+          git diff -- $ini
       - name: Inspect native .NET runtime availability
         shell: pwsh
         run: |
