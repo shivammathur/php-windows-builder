@@ -163,6 +163,10 @@ jobs:
         run: |
           Copy-Item replay/Makefile,replay/Makefile.objects .
           Copy-Item replay/main/config.w32.h main/config.w32.h
+          $dateConfig = [IO.File]::ReadAllText('ext/date/config.w32')
+          $lines = [regex]::Matches($dateConfig, 'tl_config\.WriteLine\(("(?:\\.|[^"\\])*")\);') | ForEach-Object { $_.Groups[1].Value | ConvertFrom-Json }
+          if ($lines.Count -ne 10) { throw 'Unexpected timelib header generator' }
+          Set-Content ext/date/lib/timelib_config.h $lines
           $gdObjects = Get-ChildItem 'C:/a/php-windows-builder/obj/Release_TS/ext/gd' -Recurse -Filter '*.obj' | Sort-Object FullName
           $before = $gdObjects | Get-FileHash | ConvertTo-Json
           & nmake /nologo php.exe 2>&1 | Tee-Object cli-build.log
