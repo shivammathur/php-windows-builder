@@ -109,8 +109,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {name: native-baseline, host: arm64}
-          - {name: cross-baseline, host: amd64_arm64}
           - {name: no-profile-control, host: arm64}
           - {name: fresh-gd-profile, host: arm64}
     runs-on: windows-11-vs2026-arm
@@ -159,6 +157,18 @@ jobs:
           Get-ChildItem "$parent/obj/Release_TS" -Filter *.obj -Recurse |
             Sort-Object FullName | Get-FileHash | ConvertTo-Json -Depth 4 | Set-Content object-hashes.json
           Write-Host "Object manifest SHA256: $((Get-FileHash object-hashes.json).Hash)"
+
+      - name: Build the missing CLI for runtime checks
+        shell: pwsh
+        run: |
+          Copy-Item replay/Makefile,replay/Makefile.objects .
+          Copy-Item replay/main/config.w32.h main/config.w32.h
+          $gdObjects = Get-ChildItem 'C:/a/php-windows-builder/obj/Release_TS/ext/gd' -Recurse -Filter '*.obj' | Sort-Object FullName
+          $before = $gdObjects | Get-FileHash | ConvertTo-Json
+          & nmake /nologo php.exe 2>&1 | Tee-Object cli-build.log
+          if ($LASTEXITCODE) { throw 'Cannot build CLI runtime harness' }
+          $after = $gdObjects | Get-FileHash | ConvertTo-Json
+          if ($before -cne $after) { throw 'GD objects changed while building CLI' }
 
       - name: Select controlled profile input
         shell: pwsh
@@ -222,3 +232,4 @@ jobs:
             training.log
             merge.log
             fresh-profile.txt
+            cli-build.log
