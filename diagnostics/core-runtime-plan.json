@@ -1,0 +1,68 @@
+[
+  {
+    "php": "8.5",
+    "ts": "nts",
+    "run": 38455898989,
+    "source": "fix/windows-arm64-8.5",
+    "sourceSha": "e69c2c8397c411029a18300d6bfb7cc5869bae3e",
+    "binary": "php-8.5.13-dev-nts-Win32-vs17-arm64.zip",
+    "binaryHash": "cc7126fe1027e86a9f7900cfe006bb5317e7858aaad741528354c849f20ba43e",
+    "debug": "php-debug-pack-8.5.13-dev-nts-Win32-vs17-arm64.zip",
+    "debugHash": "fa86e0dd087ee8ce1088b113007273b1bb9b22d7e8d690bca7f627af38c2a79b"
+  },
+  {
+    "php": "8.5",
+    "ts": "ts",
+    "run": 38455898989,
+    "source": "fix/windows-arm64-8.5",
+    "sourceSha": "e69c2c8397c411029a18300d6bfb7cc5869bae3e",
+    "binary": "php-8.5.13-dev-Win32-vs17-arm64.zip",
+    "binaryHash": "53e553ff6bbee0d912482d79cee4917b2f287e0e042a6e6bc5e3d3f45b8523a1",
+    "debug": "php-debug-pack-8.5.13-dev-Win32-vs17-arm64.zip",
+    "debugHash": "774e5ddd16dc44cf734143b63b9a3c8a4be94b5ebb8f76a23fa37d1a7da2eac2"
+  },
+  {
+    "php": "8.6",
+    "ts": "nts",
+    "run": 38476128354,
+    "source": "fix/windows-arm64-8.6",
+    "sourceSha": "6d72982f6f2f42fbfb6523ed777cb217f8925afd",
+    "binary": "php-8.6.0-dev-nts-Win32-vs18-arm64.zip",
+    "binaryHash": "91ec3cbfdb07c3a40008678964d87cad16c821ae121ef1d785c3b9e0dbfed854",
+    "debug": "php-debug-pack-8.6.0-dev-nts-Win32-vs18-arm64.zip",
+    "debugHash": "3df299492c8d2b0495ab4105124747bfdff0086b94feb50270b7614a48b248ce"
+  },
+  {
+    "php": "8.6",
+    "ts": "ts",
+    "run": 38476128354,
+    "source": "fix/windows-arm64-8.6",
+    "sourceSha": "6d72982f6f2f42fbfb6523ed777cb217f8925afd",
+    "binary": "php-8.6.0-dev-Win32-vs18-arm64.zip",
+    "binaryHash": "b75908b86982d42ef48178a6df8119573b3488500f58b901ac2f64ecb0feb2cb",
+    "debug": "php-debug-pack-8.6.0-dev-Win32-vs18-arm64.zip",
+    "debugHash": "58c69ed25bac356d0ec9605d8ef060c1fbfc71876cc4ab7f5f52c8c02ae3e878"
+  },
+  {
+    "php": "master",
+    "ts": "nts",
+    "run": 38476129197,
+    "source": "fix/windows-arm64-master",
+    "sourceSha": "72579c33f7333cf5219fc69ac886439564e2a5b1",
+    "binary": "php-8.7.0-dev-nts-Win32-vs18-arm64.zip",
+    "binaryHash": "16f626aff1e82d11b88d8ab12fbea9c3d2559e0e412f512034d392e42362a7c6",
+    "debug": "php-debug-pack-8.7.0-dev-nts-Win32-vs18-arm64.zip",
+    "debugHash": "6a4c35ab03c5ef7832454a6f81e60dca58abf9cb9cebacecc8617338a792e10c"
+  },
+  {
+    "php": "master",
+    "ts": "ts",
+    "run": 38476129197,
+    "source": "fix/windows-arm64-master",
+    "sourceSha": "72579c33f7333cf5219fc69ac886439564e2a5b1",
+    "binary": "php-8.7.0-dev-Win32-vs18-arm64.zip",
+    "binaryHash": "e84df7a53e08ba6bdd2383512955c940b1caa59e75c817e80f38efa93248ceb3",
+    "debug": "php-debug-pack-8.7.0-dev-Win32-vs18-arm64.zip",
+    "debugHash": "9a7445263e285d4b91becc8e6a57462a43a7674271c97806c3e1f30d26e3efa6"
+  }
+]
