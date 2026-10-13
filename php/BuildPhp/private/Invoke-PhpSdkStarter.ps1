@@ -19,7 +19,7 @@ function Invoke-PhpSdkStarter {
         [PSCustomObject] $VsConfig,
         [Parameter(Mandatory = $true, Position=2, HelpMessage='PHP Architecture')]
         [ValidateNotNull()]
-        [ValidateSet('x86', 'x64')]
+        [ValidateSet('x86', 'x64', 'arm64')]
         [string] $Arch,
         [Parameter(Mandatory = $true, Position=3, HelpMessage='Task script')]
         [string] $Task

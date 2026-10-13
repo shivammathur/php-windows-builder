@@ -13,7 +13,7 @@ function Add-WindowsTestHelpers {
         [ValidateNotNullOrEmpty()]
         [string] $TestsDirectoryPath,
         [Parameter(Mandatory = $true, Position=1, HelpMessage='Target architecture')]
-        [ValidateSet('x86', 'x64')]
+        [ValidateSet('x86', 'x64', 'arm64')]
         [string] $Arch
     )
     process {
@@ -45,8 +45,23 @@ function Add-WindowsTestHelpers {
             throw "vcvarsall.bat was not found at $vcVarsPath"
         }
 
+        $hostArch = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } elseif ($env:PROCESSOR_ARCHITECTURE) { $env:PROCESSOR_ARCHITECTURE } else { 'AMD64' }
+        $hostArchName = switch -Regex ($hostArch.ToUpperInvariant()) {
+            'ARM64' { 'arm64'; break }
+            'AMD64|X64' { 'amd64'; break }
+            default { 'x86'; break }
+        }
+        $targetArchName = if ($Arch -eq 'x64') { 'amd64' } else { $Arch }
+        $vcVarsArch = if ($hostArchName -eq $targetArchName) {
+            $hostArchName
+        } elseif ("$hostArchName`_$targetArchName" -eq 'amd64_x86') {
+            'x86'
+        } else {
+            "$hostArchName`_$targetArchName"
+        }
+
         # Match php-src's Windows helper generation by compiling bad_cmd.c with MSVC.
-        $compileCommand = "call `"$vcVarsPath`" $Arch >nul && cd /d `"$helpersDirectory`" && cl /nologo bad_cmd.c"
+        $compileCommand = "call `"$vcVarsPath`" $vcVarsArch >nul && cd /d `"$helpersDirectory`" && cl /nologo bad_cmd.c"
         & cmd.exe /d /s /c $compileCommand 2>&1 | ForEach-Object { Write-Host $_ }
         if ($LASTEXITCODE) {
             throw "MSVC compilation failed with exit code $LASTEXITCODE while generating $badCmdExe"

@@ -4,13 +4,32 @@ function Set-PgSqlTestEnvironment {
         Configure environment variables for PostgreSQL-related PHP tests and ensure the test database exists.
     #>
     [CmdletBinding()]
-    param ()
+    param (
+        [ValidateSet('x86', 'x64', 'arm64')]
+        [string] $Arch = 'x64'
+    )
     process {
         $database = 'test'
         $hostName = '127.0.0.1'
         $port = 5432
         $env:PGUSER = 'postgres'
         $env:PGPASSWORD = 'Password12!'
+
+        if ($Arch -eq 'arm64' -and -not (Test-Path pgsql_init)) {
+            # The ARM runner has no PostgreSQL server. Run the x64 server separately from the ARM64 PHP client.
+            $serverRoot = Join-Path $env:TEMP 'php-test-postgresql'
+            New-Item -ItemType Directory -Path $serverRoot -Force | Out-Null
+            $archive = Join-Path $serverRoot 'postgresql.zip'
+            Get-File -Url 'https://get.enterprisedb.com/postgresql/postgresql-16.15-1-windows-x64-binaries.zip' -OutFile $archive
+            Expand-Archive -LiteralPath $archive -DestinationPath $serverRoot -Force
+            $env:PGBIN = Join-Path $serverRoot 'pgsql\bin'
+            $data = Join-Path $serverRoot 'data'
+            & "$env:PGBIN\initdb.exe" -D $data -U postgres --auth=trust --encoding=UTF8 --locale=C
+            if ($LASTEXITCODE) { throw 'Could not initialize the PostgreSQL test server' }
+            & "$env:PGBIN\pg_ctl.exe" -D $data -l "$serverRoot\server.log" -o '-h 127.0.0.1 -p 5432' -w start
+            if ($LASTEXITCODE) { throw 'Could not start the PostgreSQL test server' }
+            Set-Content -Path pgsql_init -Value 'initialized' -Encoding ASCII
+        }
 
         if(-not(Test-Path pgsql_init)) {
             $service = Get-Service -Name "postgresql-x64-*" -ErrorAction SilentlyContinue |

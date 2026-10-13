@@ -19,7 +19,7 @@ function Set-PhpIniForTests {
         [string] $BuildDirectory,
         [Parameter(Mandatory = $true, Position=1, HelpMessage='Architecture')]
         [ValidateNotNull()]
-        [ValidateSet('x86', 'x64')]
+        [ValidateSet('x86', 'x64', 'arm64')]
         [string] $Arch,
         [Parameter(Mandatory = $true, Position=2, HelpMessage='Specify Cache')]
         [ValidateSet('nocache', 'opcache')]
@@ -37,6 +37,9 @@ function Set-PhpIniForTests {
         Add-Content $ini "extension_dir=$BuildDirectory\phpbin\ext"
         $testIni = Join-Path $BuildDirectory 'phpbin\php-test.ini'
         Copy-Item $ini $testIni -Force
+        if ($Arch -eq 'arm64') {
+            Add-Content $testIni 'com.dotnet_version=v4.0.30319'
+        }
 
         if ($Opcache -eq "opcache") {
             if ($TestType -eq "php") {

@@ -8,10 +8,23 @@ function Set-FirebirdTestEnvironment {
     [CmdletBinding()]
     param (
         [Parameter(Mandatory = $false, Position=0, HelpMessage='PHP architecture')]
-        [ValidateSet('x86', 'x64')]
+        [ValidateSet('x86', 'x64', 'arm64')]
         [string] $Arch = 'x64'
     )
     process {
+        if ($Arch -eq 'arm64') {
+            # Run the x64 server separately; PHP requires a native client DLL.
+            Set-FirebirdTestEnvironment -Arch x64
+            $client = 'C:\Firebird-arm64'
+            $archive = Join-Path $env:TEMP 'firebird-arm64.zip'
+            Get-File -Url 'https://github.com/FirebirdSQL/snapshots/releases/download/snapshot-master/Firebird-6.0.0.2190-0-1d6051b-windows-arm64.zip' -OutFile $archive
+            if ((Get-FileHash $archive).Hash -ne '5BB0D4B013F3BE3A03B2F56BC180A77FD6CB2777BEC34D51490A7C715AA92ADA') {
+                throw 'Unexpected Firebird ARM64 client archive'
+            }
+            Expand-Archive -LiteralPath $archive -DestinationPath $client -Force
+            Add-Path $client
+            return
+        }
         $destDir = "C:\Firebird-$Arch"
         $firebirdVersion = 'v4.0.4'
         $firebirdRelease = "https://github.com/FirebirdSQL/firebird/releases/download/$firebirdVersion"
