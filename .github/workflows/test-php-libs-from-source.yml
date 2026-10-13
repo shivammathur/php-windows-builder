@@ -1,5 +1,5 @@
-name: Diagnose PHP ARM64 PGO compiler hosts
-run-name: Diagnose PHP ARM64 PGO compiler hosts
+name: Relink the preserved ARM64 PGO compiler failure
+run-name: Relink identical ARM64 PGO objects and profile
 on:
   workflow_dispatch:
     inputs:
@@ -103,112 +103,76 @@ jobs:
           path: ${{ steps.cache-key.outputs.cache-dir }}
           key: ${{ steps.restore.outputs.cache-primary-key }}
 
-  php:
+  relink:
     needs: [resolve-runner, deps]
     strategy:
       fail-fast: false
       matrix:
-        arch: [arm64]
-        ts: [ts]
-        host: [x64]
-    runs-on: ${{ needs.resolve-runner.outputs.runner }}
+        host: [arm64, amd64_arm64]
+    runs-on: windows-11-arm
     steps:
-      - name: Configure PHP source line endings
-        shell: pwsh
-        run: |
-          git config --global core.autocrlf false
-          git config --global core.eol lf
-
-      - name: Checkout PHP source
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v6
         with:
           repository: ${{ inputs.php-src-repository }}
           ref: ${{ inputs.php-src-ref }}
-          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Checkout
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v6
         with:
-          path: builder
-          ref: test/arm64-series-dependencies
+          path: probe
 
-      - name: Restore dependency cache
-        id: deps
-        uses: actions/cache/restore@v5
+      - uses: actions/cache/restore@v5
         with:
           path: ${{ needs.deps.outputs.cache-dir }}
           key: ${{ needs.deps.outputs.cache-key }}
           fail-on-cache-miss: true
 
-      - name: Select compiler host for the probe
-        shell: pwsh
-        run: |
-          $file = 'builder/php/BuildPhp/private/Invoke-PhpSdkStarter.ps1'
-          $code = Get-Content $file -Raw
-          $probe = @'
-                  Add-Content $env:GITHUB_ENV "PROBE_SDK_DIR=$BuildDirectory\php-sdk"
-                  if ($env:PROBE_HOST -eq 'x64') {
-                      $shell = Join-Path $BuildDirectory 'php-sdk/bin/phpsdk_setshell.bat'
-                      $text = [IO.File]::ReadAllText($shell)
-                      if ($text -notmatch '(?:EQU|LEQ) 16 set HOST_ARCH_NAME=amd64') { throw 'Expected host condition missing' }
-                      [IO.File]::WriteAllText($shell, ($text -replace '(?:EQU|LEQ) 16 set HOST_ARCH_NAME=amd64', 'LEQ 17 set HOST_ARCH_NAME=amd64'))
-                  }
-          '@
-          $code = $code.Replace('        $toolsetArgs =', "$probe`n        `$toolsetArgs =")
-          Set-Content $file $code
-          $action = 'builder/php/action.yml'
-          $content = [IO.File]::ReadAllText($action)
-          [IO.File]::WriteAllText($action, $content.Replace('name: artifacts-', 'name: artifacts-${{ matrix.host }}-'))
-
-      - name: Build
-        uses: ./builder/php
+      - uses: actions/download-artifact@v8
         with:
-          arch: ${{ matrix.arch }}
-          ts: ${{ matrix.ts }}
-          libs-build-runs: ${{ inputs.libs-build-runs }}
-          sbom: ${{ inputs.sbom }}
+          repository: shivammathur/php-windows-builder
+          run-id: 38444329489
+          name: pgo-state-native
+          path: preserved
           github-token: ${{ secrets.GITHUB_TOKEN }}
-        env:
-          PROBE_HOST: ${{ matrix.host }}
-          PHP_BUILD_PROVIDER: "The PHP Group"
-          DEPS_DIR: ${{ needs.deps.outputs.cache-dir }}
-          DEPS_CACHE_HIT: ${{ steps.deps.outputs.cache-hit }}
 
-      - name: Retry failed native PGO link with the x64 compiler host
-        if: failure() && matrix.host == 'native'
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.host }}
+          toolset: 14.44.35207
+
+      - name: Restore identical objects, profile and libraries
         shell: pwsh
         run: |
-          $pgd = Join-Path (Split-Path $env:GITHUB_WORKSPACE -Parent) 'obj/Release_TS/php8ts.pgd'
-          if (-not (Test-Path $pgd)) { throw 'PGO database was not generated' }
-          Get-FileHash $pgd | Format-List
-          $shell = Join-Path $env:PROBE_SDK_DIR 'bin/phpsdk_setshell.bat'
-          $text = [IO.File]::ReadAllText($shell)
-          [IO.File]::WriteAllText($shell, ($text -replace '(?:EQU|LEQ) 16 set HOST_ARCH_NAME=amd64', 'LEQ 17 set HOST_ARCH_NAME=amd64'))
-          @'
-          @echo off
-          where cl
-          where link
-          nmake
-          if errorlevel 1 exit /b 1
-          nmake snap
-          '@ | Set-Content retry-link.bat
-          & "$env:PROBE_SDK_DIR/phpsdk-starter.bat" -c vs17 -a arm64 -s 14.44.35207 -t retry-link.bat
-          if ($LASTEXITCODE) { throw "Cross-hosted relink failed: $LASTEXITCODE" }
-          Get-FileHash $pgd | Format-List
+          & 7z x preserved/build-state.7z -oreplay -y
+          if ($LASTEXITCODE) { throw 'Cannot restore the preserved compiler state' }
+          $parent = Split-Path $env:GITHUB_WORKSPACE -Parent
+          if ($parent -ne 'C:aphp-windows-builder') { throw "Replay paths differ: $parent" }
+          Move-Item replay/obj "$parent/obj"
+          Copy-Item '${{ needs.deps.outputs.cache-dir }}' "$parent/deps" -Recurse
+          $pgd = "$parent/obj/Release_TS/php8ts.pgd"
+          $hash = (Get-FileHash $pgd).Hash
+          if ($hash -ne '05FE5FD789AE61696E22D05CE036F067121517EF01BCE868EE12E1211B5302FB') { throw 'Profile changed' }
+          Write-Host "Preserved PHP PGO profile SHA256: $hash"
+          Get-ChildItem "$parent/obj/Release_TS" -Filter *.obj -Recurse |
+            Sort-Object FullName | Get-FileHash | ConvertTo-Json -Depth 4 | Set-Content object-hashes.json
+          Write-Host "Object manifest SHA256: $((Get-FileHash object-hashes.json).Hash)"
 
-      - name: Preserve failed build state
-        if: failure()
+      - name: Force the original PGO link and check the resulting ARM64 binary
         shell: pwsh
         run: |
-          $obj = Join-Path (Split-Path $env:GITHUB_WORKSPACE -Parent) 'obj'
-          if (Test-Path $obj) {
-            $files = @($obj, 'Makefile', 'Makefile.objects', 'config.nice.bat', 'config.ts.bat', 'main/config.w32.h' | Where-Object { Test-Path $_ })
-            & 7z a -t7z -mx=1 build-state.7z @files
-            if ($LASTEXITCODE) { throw 'Cannot archive the compiler failure state' }
-          }
+          & cmd /c probe/pgo-relink.bat 2>&1 | Tee-Object relink.log
+          $linkExit = $LASTEXITCODE
+          if ($linkExit) { throw "Original PGO link failed: $linkExit" }
+          $dll = 'C:aphp-windows-builderobjRelease_TSphp8ts.dll'
+          & dumpbin /headers $dll | Tee-Object headers.log
+          if ($LASTEXITCODE) { throw 'Invalid output DLL' }
+          & 'C:aphp-windows-builderobjRelease_TSphp.exe' -n -r 'echo PHP_VERSION, PHP_EOL; $a=range(0,10000); echo array_sum($a), PHP_EOL;'
+          if ($LASTEXITCODE) { throw 'Relinked PHP cannot execute' }
 
       - uses: actions/upload-artifact@v7
-        if: failure()
+        if: always()
         with:
-          name: pgo-state-${{ matrix.host }}
-          path: build-state.7z
+          name: pgo-relink-${{ matrix.host }}
+          path: |
+            relink.log
+            headers.log
+            object-hashes.json
