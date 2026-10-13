@@ -1,113 +1,50 @@
-name: ARM64 PGO environment probe
+name: ARM64 PHP SDK launcher probe
 on: workflow_dispatch
 jobs:
-  probe:
+  sdk:
+    name: SDK ${{ matrix.php }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - php: '8.2'
             runner: windows-11-arm
-            sdk: '10.0.22621.0'
-            host: amd64_arm64
           - php: '8.4'
             runner: windows-11-arm
-            sdk: ''
-            host: arm64
           - php: '8.6'
             runner: windows-11-vs2026-arm
-            sdk: ''
-            host: arm64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
-      - name: Resolve toolset
-        id: vs
-        shell: pwsh
-        run: |
-          Import-Module ./php/BuildPhp -Force
-          $vs = Get-VsVersion -PhpVersion '${{ matrix.php }}' -Arch arm64
-          Add-Content $env:GITHUB_OUTPUT "toolset=$($vs.toolset)"
-      - uses: ilammy/msvc-dev-cmd@v1
         with:
-          arch: ${{ matrix.host }}
-          toolset: ${{ steps.vs.outputs.toolset }}
-          sdk: ${{ matrix.sdk }}
-      - name: Inspect and run PGO tools
+          ref: test/arm64-series-dependencies
+          path: builder
+      - name: Build and run PGO program through the PHP SDK
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $env:PATH = "$env:VCToolsInstallDir\bin\arm64;$env:PATH"
-          function Get-Machine([string]$path) {
-            $bytes = [IO.File]::ReadAllBytes($path)
-            $pe = [BitConverter]::ToInt32($bytes, 0x3c)
-            '{0:x4}' -f [BitConverter]::ToUInt16($bytes, $pe + 4)
-          }
-          Write-Host "VC tools: $env:VCToolsInstallDir"
-          Write-Host "PATH tools:"
-          foreach ($tool in 'cl.exe', 'pgomgr.exe', 'pgort140.dll') {
-            $found = @(Get-Command $tool -All -ErrorAction SilentlyContinue)
-            if ($found) { $found | ForEach-Object { Write-Host "$tool $($_.Source)" } }
-            else { Write-Host "$tool is absent from PATH" }
-          }
-          $pgoFiles = @(Get-ChildItem "$env:VSINSTALLDIR\VC" -Recurse -File -Include pgomgr.exe,pgort*.dll)
-          $pgoFiles | ForEach-Object { Write-Host "$(Get-Machine $_.FullName) $($_.FullName)" }
+          Import-Module ./builder/php/BuildPhp -Force
+          $vs = Get-VsVersion -PhpVersion '${{ matrix.php }}' -Arch arm64
+          Get-PhpSdk -Arch arm64
           @'
+          #include <windows.h>
           #include <stdio.h>
           int main(void) {
               volatile int value = 0;
               for (int i = 0; i < 100; i++) value += i;
-              printf("PGO ARM64 runtime works: %d\n", value);
+              printf("PHP SDK ARM64 PGO runtime works: %d\n", value);
               return value != 4950;
           }
-          '@ | Set-Content probe.c
-          & cl.exe /nologo /O2 /GL probe.c /link /LTCG /GENPROFILE /OUT:probe.exe
-          if ($LASTEXITCODE) { throw 'PGO compile failed' }
-          & dumpbin.exe /dependents probe.exe
-          & .\probe.exe
-          $originalExit = $LASTEXITCODE
-          Write-Host "PGO binary exit without staging: $originalExit"
-          if ($originalExit) { throw 'PGO runtime probe failed' }
-          $manager = @($pgoFiles | Where-Object { $_.Name -eq 'pgomgr.exe' -and $_.FullName.StartsWith($env:VCToolsInstallDir, [StringComparison]::OrdinalIgnoreCase) })
-          foreach ($exe in $manager) {
-            Write-Host "Running installed PGO manager: $($exe.FullName)"
-            & $exe.FullName /? 2>&1 | Select-Object -First 8
-            Write-Host "PGO manager exit: $LASTEXITCODE"
-          }
-          exit 0
-      - name: Check BCMath SIMD compatibility
-        if: matrix.php != '8.2'
-        shell: pwsh
-        run: |
-          Invoke-WebRequest https://raw.githubusercontent.com/shivammathur/php-src/fix/windows-arm64-master/ext/bcmath/libbcmath/src/xsse.h -OutFile xsse.h
-          & cl.exe /nologo /std:c17 /O2 /I. simd-probe.c /Fe:simd-probe.exe
-          if ($LASTEXITCODE) { throw 'MSVC SIMD compile failed' }
-          $result = & .\simd-probe.exe
-          Write-Host "SIMD result: $result"
-          if ($LASTEXITCODE -or $result -ne 'd26d9d7037b6204b') { throw 'MSVC SIMD result differs from original native ARM64 implementation' }
-  linux-simd:
-    runs-on: ubuntu-24.04-arm
-    strategy:
-      fail-fast: false
-      matrix:
-        cc: [gcc, clang]
-    steps:
-      - uses: actions/checkout@v6
-      - name: Compare original and patched ARM64 SIMD
-        shell: bash
-        run: |
-          set -euo pipefail
-          flags=(-std=c17 -O2 -Wall -Werror)
-          if [[ '${{ matrix.cc }}' == gcc ]]; then flags+=(-Wno-error=maybe-uninitialized); fi
-          curl -fsSL https://raw.githubusercontent.com/php/php-src/8db886e419a6aba1903ec97754b0548051b55f9c/ext/bcmath/libbcmath/src/xsse.h -o xsse.h
-          ${{ matrix.cc }} "${flags[@]}" simd-probe.c -o original
-          ${{ matrix.cc }} "${flags[@]}" -S simd-probe.c -o original.s
-          original=$(./original)
-          curl -fsSL https://raw.githubusercontent.com/shivammathur/php-src/fix/windows-arm64-master/ext/bcmath/libbcmath/src/xsse.h -o xsse.h
-          ${{ matrix.cc }} "${flags[@]}" simd-probe.c -o patched
-          ${{ matrix.cc }} "${flags[@]}" -S simd-probe.c -o patched.s
-          patched=$(./patched)
-          echo "Original: $original; patched: $patched"
-          test "$original" = "$patched"
-          test "$patched" = d26d9d7037b6204b
-          diff -u <(sed '/^\/\/ [0-9]/d' original.s) <(sed '/^\/\/ [0-9]/d' patched.s)
+          '@ | Set-Content sdk-probe.c
+          @'
+          @echo off
+          where cl.exe
+          where pgort140.dll
+          echo SDK: %WindowsSDKVersion%
+          echo Toolset: %VCToolsVersion%
+          cl.exe /nologo /O2 /GL sdk-probe.c /link /LTCG /GENPROFILE /OUT:sdk-probe.exe
+          if errorlevel 1 exit /b 1
+          sdk-probe.exe
+          exit /b %errorlevel%
+          '@ | Set-Content sdk-probe.bat
+          Invoke-PhpSdkStarter -BuildDirectory (Get-Location).Path -VsConfig $vs -Arch arm64 -Task sdk-probe.bat
