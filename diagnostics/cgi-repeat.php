@@ -4,7 +4,7 @@ $php = get_cgi_path();
 if (!$php) throw new RuntimeException('Cannot discover original CGI binary');
 reset_env_vars();
 $results = [];
-for ($iteration = 0; $iteration < 50; $iteration++) {
+for ($iteration = 0; $iteration < 350; $iteration++) {
     foreach (['af' => '-n -a -f "wrong"', 'fa' => '-n -f "wrong" -a'] as $mode => $flags) {
         $command = "$php $flags";
         $output = shell_exec($command);
@@ -13,15 +13,12 @@ for ($iteration = 0; $iteration < 50; $iteration++) {
         passthru($command, $status);
         $output = ob_get_clean();
         $results[] = ['iteration' => $iteration, 'mode' => $mode, 'api' => 'passthru', 'exit' => $status, 'output' => $output];
-        $process = proc_open($command, [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
-        if (!is_resource($process)) throw new RuntimeException('Cannot start CGI control');
-        fclose($pipes[0]);
-        $output = stream_get_contents($pipes[1]);
-        $error = stream_get_contents($pipes[2]);
-        fclose($pipes[1]);
-        fclose($pipes[2]);
-        $status = proc_close($process);
-        $results[] = ['iteration' => $iteration, 'mode' => $mode, 'api' => 'proc_open', 'exit' => $status, 'output' => $output, 'error' => $error];
+        // shell_exec uses the same text-mode popen/read/close path, but discards the child exit status.
+        $pipe = popen($command, 'rt');
+        if (!is_resource($pipe)) throw new RuntimeException('Cannot start CGI control');
+        $output = stream_get_contents($pipe);
+        $status = pclose($pipe);
+        $results[] = ['iteration' => $iteration, 'mode' => $mode, 'api' => 'popen', 'exit' => $status, 'output' => $output];
     }
 }
 file_put_contents($argv[2], json_encode($results, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));

@@ -1,5 +1,5 @@
-name: Review ARM64 unwind, ICU and CGI runtime failures
-run-name: Controlled PGO links, ICU API comparison and PHP subprocess checks
+name: Isolate ARM64 shrink-wrap unwind metadata and CGI child exits
+run-name: Test native shrink-wrap workaround and capture CGI child exit status
 on:
   workflow_dispatch:
     inputs:
@@ -110,7 +110,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        mode: [original, cache-off, modern, modern-cache-off]
+        mode: [no-shrink-wrap]
     runs-on: windows-11-vs2026-arm
     timeout-minutes: 30
     steps:
@@ -145,37 +145,11 @@ jobs:
           toolset: 14.51.36231
       - name: Relink identical core objects and profile, then exercise fresh DLL
         shell: pwsh
-        run: ./probe/diagnostics/core-relink.ps1 -Mode '${{ matrix.mode }}' -Deps '${{ needs.deps.outputs.cache-dir }}'
+        run: ./probe/diagnostics/core-relink.ps1 -Mode '${{ matrix.mode }}' -Deps '${{ needs.deps.outputs.cache-dir }}' -FullCore
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: core-link-${{ matrix.mode }}
-          path: results
-
-  icu:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - {arch: x64, runner: windows-2025-vs2026}
-          - {arch: arm64, runner: windows-11-vs2026-arm}
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v6
-      - uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: ${{ matrix.arch }}
-          toolset: 14.51.36231
-      - name: Compare ICU C and C++ APIs using identical NaN bit patterns
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: ./diagnostics/icu-nan.ps1 -Arch '${{ matrix.arch }}'
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: icu-api-${{ matrix.arch }}
           path: results
 
   cgi:
@@ -184,33 +158,28 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        php: ['8.5', '8.6', master]
-        ts: [nts, ts]
+        include:
+          - {name: original-arm64, extra: '', source: fix/windows-arm64-8.6}
+          - {name: published-x64, extra: '-PublishedX64', source: fix/windows-arm64-8.4}
     steps:
       - uses: actions/checkout@v6
-      - name: Select the original package and source branch
-        id: plan
-        shell: pwsh
-        run: |
-          $p = @(Get-Content diagnostics/core-runtime-plan.json -Raw | ConvertFrom-Json | Where-Object { $_.php -eq '${{ matrix.php }}' -and $_.ts -eq '${{ matrix.ts }}' })
-          if ($p.Count -ne 1) { throw 'Ambiguous package provenance' }
-          foreach ($key in 'source','run') { "$key=$($p[0].$key)" >> $env:GITHUB_OUTPUT }
       - uses: actions/checkout@v6
         with:
           repository: shivammathur/php-src
-          ref: ${{ steps.plan.outputs.source }}
+          ref: ${{ matrix.source }}
           path: source
       - uses: actions/download-artifact@v8
+        if: matrix.name == 'original-arm64'
         with:
           name: artifacts
-          run-id: ${{ steps.plan.outputs.run }}
+          run-id: 38476128354
           github-token: ${{ github.token }}
           path: artifacts
-      - name: Exercise original packages through PHP subprocess APIs
+      - name: Capture child exit status through the same popen path
         shell: pwsh
-        run: ./diagnostics/cgi-repeat.ps1 -Php '${{ matrix.php }}' -Ts '${{ matrix.ts }}'
+        run: ./diagnostics/cgi-repeat.ps1 -Php '8.6' -Ts ts ${{ matrix.extra }}
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: cgi-repeat-${{ matrix.php }}-${{ matrix.ts }}
+          name: cgi-exits-${{ matrix.name }}
           path: results

@@ -1,5 +1,5 @@
-param([Parameter(Mandatory)][ValidateSet('original','cache-off','modern','modern-cache-off')][string]$Mode,
-      [Parameter(Mandatory)][string]$Deps)
+param([Parameter(Mandatory)][ValidateSet('original','cache-off','modern','modern-cache-off','no-shrink-wrap')][string]$Mode,
+      [Parameter(Mandatory)][string]$Deps, [switch]$FullCore)
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
 $workspace = (Get-Location).Path
@@ -54,6 +54,7 @@ $needle = 'STATIC_EXT_LDFLAGS=$(LDFLAGS_BCMATH) /LTCG:PGUPDATE '
 if ([regex]::Matches($makefile,[regex]::Escape($needle)).Count -ne 1) { throw 'Unexpected core PGO flags' }
 $flags = if ($Mode -like 'modern*') { '/LTCG /USEPROFILE' } else { '/LTCG:PGUPDATE' }
 if ($Mode -like '*cache-off') { $flags += ' /d2:-FuncCache1' }
+if ($Mode -eq 'no-shrink-wrap') { $flags += ' /d2:-shrink-wrapping-' }
 $makefile = $makefile.Replace($needle, 'STATIC_EXT_LDFLAGS=$(LDFLAGS_BCMATH) ' + $flags + ' ')
 # A phony target runs only the exact saved core link. No source regeneration or compilation.
 $recipe = @'
@@ -88,8 +89,10 @@ $env:SKIP_IO_CAPTURE_TESTS = '1'
 foreach ($cache in 'nocache','opcache') {
     $env:TEST_PHP_JUNIT = "$results/core-$cache.xml"
     $options = @('-n','-d','fatal_error_backtraces=Off','-d',"extension_dir=$workspace/runtime/ext",'-d','display_errors=1')
+    if ($FullCore) { $options += @('-d','memory_limit=-1','-d','extension=openssl','-d','extension=sockets') }
     if ($cache -eq 'opcache') { $options += @('-d','opcache.enable_cli=1') }
-    & $exe -n run-tests.php -p $exe @options --offline --show-diff --no-progress -g FAIL,BORK,WARN,SKIP -q Zend/tests/generators Zend/tests/fibers sapi/cgi/tests 2>&1 | Tee-Object "$results/core-$cache.log"
+    $directories = if ($FullCore) { @('Zend/tests','tests','sapi/cgi/tests','sapi/cli/tests') } else { @('Zend/tests/generators','Zend/tests/fibers','sapi/cgi/tests') }
+    & $exe -n run-tests.php -p $exe @options --offline --show-diff --no-progress -g FAIL,BORK,WARN,SKIP -q -j6 @directories 2>&1 | Tee-Object "$results/core-$cache.log"
     $testExit = $LASTEXITCODE
     if (-not (Test-Path "$results/core-$cache.xml")) { throw 'No PHPT report' }
     $xml = [xml](Get-Content "$results/core-$cache.xml" -Raw)
