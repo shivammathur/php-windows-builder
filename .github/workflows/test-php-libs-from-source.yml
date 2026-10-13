@@ -201,6 +201,8 @@ jobs:
           $before = $preserved | Sort-Object FullName | Get-FileHash | ConvertTo-Json
           $path = Join-Path $env:GITHUB_WORKSPACE 'ext/gd/libgd/gdft.c'
           [IO.File]::WriteAllText($path, [IO.File]::ReadAllText($path).Replace("`r`n", "`n"))
+          $patch = Join-Path $env:GITHUB_WORKSPACE 'probe/diagnostics/gd-arm64-pgo.patch'
+          [IO.File]::WriteAllText($patch, [IO.File]::ReadAllText($patch).Replace("`r`n", "`n"))
           & git apply --check probe/diagnostics/gd-arm64-pgo.patch
           if ($LASTEXITCODE) { throw 'Workaround does not match reviewed source' }
           & git apply probe/diagnostics/gd-arm64-pgo.patch
