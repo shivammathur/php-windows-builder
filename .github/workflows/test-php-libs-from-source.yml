@@ -1,5 +1,5 @@
 name: Relink the preserved ARM64 PGO compiler failure
-run-name: Diagnose ARM64 core DLL PGO linker settings
+run-name: Isolate profile-dependent ARM64 optimizer crash
 on:
   workflow_dispatch:
     inputs:
@@ -109,26 +109,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: native-baseline
+          - name: aggressive-profile
             host: arm64
-            flags: ''
-            modern: false
-          - name: cross-baseline
-            host: amd64_arm64
-            flags: ''
-            modern: false
-          - name: inliner-cache-off
+            optimization: /LTCG /USEPROFILE:AGGRESSIVE
+          - name: without-profile-control
             host: arm64
-            flags: /d2:-FuncCache1
-            modern: false
-          - name: useprofile
-            host: arm64
-            flags: ''
-            modern: true
-          - name: useprofile-inliner-cache-off
-            host: arm64
-            flags: /d2:-FuncCache1
-            modern: true
+            optimization: /LTCG
     runs-on: windows-11-arm
     steps:
       - uses: actions/checkout@v6
@@ -176,18 +162,16 @@ jobs:
             Sort-Object FullName | Get-FileHash | ConvertTo-Json -Depth 4 | Set-Content object-hashes.json
           Write-Host "Object manifest SHA256: $((Get-FileHash object-hashes.json).Hash)"
 
-      - name: Select PGO link options
+      - name: Select diagnostic optimizer settings
         shell: pwsh
         run: |
-          if ('${{ matrix.modern }}' -eq 'true') {
-            $path = 'probe/pgo-relink.bat'
-            $text = [IO.File]::ReadAllText($path)
-            [IO.File]::WriteAllText($path, $text.Replace('/LTCG:PGUPDATE', '/LTCG /USEPROFILE'))
-          }
+          $path = 'probe/pgo-relink.bat'
+          $text = [IO.File]::ReadAllText($path)
+          [IO.File]::WriteAllText($path, $text.Replace('/LTCG:PGUPDATE', '${{ matrix.optimization }}'))
+          Get-Content $path
+          (Get-Item (Get-Command link.exe).Source).VersionInfo | Format-List FileVersion, ProductVersion
 
       - name: Force the original PGO link and check the resulting ARM64 binary
-        env:
-          RELINK_FLAGS: ${{ matrix.flags }}
         shell: pwsh
         run: |
           & cmd /c (Join-Path $env:GITHUB_WORKSPACE 'probe/pgo-relink.bat') 2>&1 | Tee-Object relink.log
