@@ -1,4 +1,4 @@
-param([ValidateSet('arm64','x64')][string]$Arch,[ValidateSet('full','signals')][string]$Mode)
+param([ValidateSet('arm64','x64')][string]$Arch,[ValidateSet('full','signals','openssl')][string]$Mode,[ValidateSet('nocache','opcache')][string]$Cache='opcache')
 $ErrorActionPreference='Stop'
 $PSNativeCommandUseErrorActionPreference=$false
 $workspace=(Get-Location).Path
@@ -16,7 +16,7 @@ if($Arch -eq 'x64') {
     Remove-Item Env:DEPS_DIR,Env:DEPS_CACHE_HIT -ErrorAction SilentlyContinue
 }
 if((Get-FileHash "artifacts/$($p.zip)").Hash -ne $p.hash){throw 'Package digest changed'}
-@{package=$p;arch=$Arch;mode=$Mode;builder=$builderSha}|ConvertTo-Json -Depth 5|Set-Content "$results/provenance.json"
+@{package=$p;arch=$Arch;mode=$Mode;cache=$Cache;builder=$builderSha}|ConvertTo-Json -Depth 5|Set-Content "$results/provenance.json"
 Get-Item "$env:WINDIR/System32/ntdll.dll","$env:WINDIR/System32/ucrtbase.dll"|ForEach-Object {@{path=$_.FullName;version=$_.VersionInfo.FileVersion;sha256=(Get-FileHash $_).Hash}}|ConvertTo-Json|Set-Content "$results/system-runtime.json"
 Import-Module "$workspace/builder/php/BuildPhp" -Force
 
@@ -34,25 +34,29 @@ function Save-ProcessEvents([string]$Name) {
         }
     })
     $records|ConvertTo-Json -Depth 4|Set-Content "$results/processes-$Name.json"
-    if(-not @($records|Where-Object {$_.kind -eq 'Stop' -and $_.name -eq 'php-cgi.exe'}).Count){throw 'Missing CGI process-exit evidence'}
+    $observedName=if($Mode -eq 'openssl'){'php.exe'}else{'php-cgi.exe'}
+    if(-not @($records|Where-Object {$_.kind -eq 'Stop' -and $_.name -eq $observedName}).Count){throw 'Missing process-exit evidence'}
 }
 try {
-    $passes=if($Mode -eq 'full'){1..3}else{1..1}
+    $passes=if($Mode -eq 'full'){1..3}elseif($Mode -eq 'openssl'){1..2}else{1..1}
+    $testType=if($Mode -eq 'openssl'){'ext'}else{'php'}
     foreach($iteration in $passes) {
         Push-Location "$workspace/artifacts"
         try {
-            $args=@{PhpVersion=$p.version;Arch=$Arch;Ts='nts';Opcache='opcache';TestType='php';SourceRepository='shivammathur/php-src';SourceRef=$p.source}
+            $args=@{PhpVersion=$p.version;Arch=$Arch;Ts='nts';Opcache=$Cache;TestType=$testType;SourceRepository='shivammathur/php-src';SourceRef=$p.source}
             if($Mode -eq 'signals'){$args.TestDirectories=@('sapi/cgi/tests','sapi/cli/tests')}
+            if($Mode -eq 'openssl'){$args.TestDirectories=@('ext/openssl')}
             Invoke-PhpTests @args
             $env:DEPS_CACHE_HIT='true'
         } finally {Pop-Location}
         $build=Split-Path $env:TEST_PHP_JUNIT
         $tests=Join-Path $build tests
         $dest=(New-Item "$results/core-$iteration" -ItemType Directory -Force).FullName
-        Copy-Item "$workspace/artifacts/test-$Arch-nts-opcache-php.*" $dest
+        Copy-Item "$workspace/artifacts/test-$Arch-nts-$Cache-$testType.*" $dest
         Copy-Item "$build/phpbin/php-test.ini" "$dest/php-test.ini"
-        Copy-Item "$tests/php-tests-to-run.txt" $dest
-        $sourceFiles=@(foreach($dir in 'Zend/tests','tests','sapi/cgi/tests','sapi/cli/tests'){Get-ChildItem "$workspace/source/$dir" -Recurse -File -Filter *.phpt})
+        Copy-Item "$tests/$testType-tests-to-run.txt" $dest
+        $dirs=if($Mode -eq 'openssl'){@('ext/openssl')}else{@('Zend/tests','tests','sapi/cgi/tests','sapi/cli/tests')}
+        $sourceFiles=@(foreach($dir in $dirs){Get-ChildItem "$workspace/source/$dir" -Recurse -File -Filter *.phpt})
         foreach($file in $sourceFiles) {
             $relative=[IO.Path]::GetRelativePath("$workspace/source",$file.FullName)
             if((Get-FileHash $file.FullName).Hash -ne (Get-FileHash (Join-Path $tests $relative)).Hash){throw "Changed PHPT: $relative"}
@@ -61,6 +65,21 @@ try {
         if($Arch -eq 'arm64' -and $Mode -eq 'full' -and $xml.SelectNodes('//testcase').Count -ne 6655){throw 'Incomplete core coverage'}
         @{sourceFilesVerified=$sourceFiles.Count;cases=$xml.SelectNodes('//testcase').Count;skips=$xml.SelectNodes('//testcase[skipped]').Count;failures=@($xml.SelectNodes('//testcase[failure or error]')|ForEach-Object OuterXml)}|ConvertTo-Json -Depth 5|Set-Content "$dest/review.json"
         Save-ProcessEvents "core-$iteration"
+    }
+    if($Mode -eq 'openssl') {
+        $exe="$build/phpbin/php.exe"
+        $ini="$build/phpbin/php-test.ini"
+        Push-Location $tests
+        try {
+            foreach($iteration in 1..30) {
+                $env:TEST_PHP_JUNIT="$results/isolated-$iteration.xml"
+                $start=[DateTime]::UtcNow.ToString('o')
+                & $exe -n run-tests.php -p $exe -n -c $ini --offline --show-diff --no-progress --set-timeout 300 -q ext/openssl/tests/session_resumption_server_external_with_no_verify.phpt 2>&1|Tee-Object "$results/isolated-$iteration.log"|Out-Host
+                @{start=$start;end=[DateTime]::UtcNow.ToString('o');exit=$LASTEXITCODE;iteration=$iteration}|ConvertTo-Json -Compress|Add-Content "$results/isolated-steps.jsonl"
+                if(-not(Test-Path $env:TEST_PHP_JUNIT)){throw 'Missing isolated OpenSSL report'}
+            }
+        } finally {Pop-Location}
+        Save-ProcessEvents 'isolated-openssl'
     }
     if($Mode -eq 'signals') {
         $exe="$build/phpbin/php.exe"

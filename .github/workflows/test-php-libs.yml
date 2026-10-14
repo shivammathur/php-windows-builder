@@ -1,4 +1,4 @@
-name: Trace CGI exits using production settings and published x64 control
+name: Trace OpenSSL server startup with original master packages
 on: workflow_dispatch
 permissions:
   contents: read
@@ -11,7 +11,7 @@ jobs:
       fail-fast: false
       matrix:
         arch: [arm64]
-        mode: [full, signals]
+        cache: [nocache, opcache]
     env:
       DEPS_DIR: C:\deps-8.6-arm64
       DEPS_CACHE_HIT: 'true'
@@ -45,11 +45,11 @@ jobs:
           run-id: 38487078004
           github-token: ${{ github.token }}
           path: artifacts
-      - name: Observe CGI child exits with unchanged binaries
+      - name: Observe OpenSSL child exits with unchanged binaries
         shell: pwsh
-        run: ./diagnostics/cgi-full-trace.ps1 -Arch '${{ matrix.arch }}' -Mode '${{ matrix.mode }}'
+        run: ./diagnostics/cgi-full-trace.ps1 -Arch '${{ matrix.arch }}' -Mode openssl -Cache '${{ matrix.cache }}'
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: cgi-trace-${{ matrix.arch }}-${{ matrix.mode }}
+          name: openssl-trace-${{ matrix.arch }}-${{ matrix.cache }}
           path: results
