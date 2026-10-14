@@ -24,6 +24,13 @@ function Get-VsVersionHelper {
     begin {
     }
     process {
+        if ($env:DIAGNOSTIC_TOOLSET) {
+            if ($VsVersion -ne 'vs18' -or $Arch -ne 'arm64' -or
+                !(Test-Path "$env:DIAGNOSTIC_TOOLSET_PATH/bin/Hostarm64/arm64/cl.exe")) {
+                throw 'The toolset comparison requires the installed native VS18 ARM64 compiler'
+            }
+            return $env:DIAGNOSTIC_TOOLSET
+        }
         $installerDir = Join-Path "${env:ProgramFiles(x86)}\Microsoft Visual Studio" 'Installer'
         $vswherePath = Join-Path $installerDir 'vswhere.exe'
         if (-not (Test-Path $vswherePath)) {
