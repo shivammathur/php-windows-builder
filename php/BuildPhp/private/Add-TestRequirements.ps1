@@ -107,6 +107,21 @@ function Add-TestRequirements {
 
         Add-WindowsTestHelpers -TestsDirectoryPath $testsDirectoryPath -Arch $Arch
 
+        # cURL 8.23 removed SMB. PHP 8.6+ uses that upstream configuration,
+        # while older PHP series retain SMB through the Winlibs maintenance patch.
+        # Keep this test usable with both pre-8.23 and current development packages.
+        if ($compatVersion -eq 'master' -or $compatVersion -match '^8\.([6-9]|[1-9][0-9])(?:\.|$)') {
+            $curlConfigTest = Join-Path $testsDirectoryPath 'ext\curl\tests\check_win_config.phpt'
+            if (Test-Path $curlConfigTest) {
+                $contents = [System.IO.File]::ReadAllText($curlConfigTest)
+                $updated = $contents.Replace('sftp, smb, smbs, smtp', 'sftp, %r(smb, smbs, )?%rsmtp')
+                if ($updated -ne $contents) {
+                    [System.IO.File]::WriteAllText($curlConfigTest, $updated)
+                    Write-Host 'Updated the PHP 8.6+ Windows curl test for upstream SMB removal in cURL 8.23.'
+                }
+            }
+        }
+
         $compatPatchApplied = $true
         $testSettings = Get-TestSettings -PhpVersion $compatVersion
         $compatPatchName = if ($testSettings.PSObject.Properties.Name -contains 'compatPatch') { $testSettings.compatPatch } else { '' }
