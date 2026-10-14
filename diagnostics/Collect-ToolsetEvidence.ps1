@@ -9,7 +9,7 @@ $obj = Join-Path (Split-Path $env:GITHUB_WORKSPACE -Parent) 'obj'
 if (Test-Path $obj) {
     @(Get-ChildItem $obj -Filter '*.pgd' -Recurse -File | Get-FileHash) |
         ConvertTo-Json -Depth 5 | Set-Content "$evidence/profile-hashes.json"
-    $stateFiles = if ($env:BUILD_OUTCOME -eq 'success') {
+    [string[]]$stateFiles = if ($env:BUILD_OUTCOME -eq 'success') {
         @(Get-ChildItem $obj -Filter '*.pgd' -Recurse -File | ForEach-Object FullName)
     } else { @($obj) }
     if ($stateFiles.Count) {

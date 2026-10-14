@@ -2,9 +2,10 @@ $ErrorActionPreference = 'Stop'
 $evidence = Join-Path $env:GITHUB_WORKSPACE 'toolset-evidence'
 $expected = [IO.Path]::GetFullPath("$env:DIAGNOSTIC_TOOLSET_PATH/bin/Hostarm64/arm64").TrimEnd('\')
 $tools = foreach ($name in @('cl.exe','link.exe','pgomgr.exe')) {
-    $command = Get-Command $name -CommandType Application
+    $candidates = @(Get-Command $name -CommandType Application)
+    $command = $candidates[0]
     if ([IO.Path]::GetDirectoryName($command.Source) -ine $expected) { throw "$name resolved outside requested native toolset: $($command.Source)" }
-    @{name=$name; path=$command.Source; version=(Get-Item $command.Source).VersionInfo.FileVersion; sha256=(Get-FileHash $command.Source).Hash}
+    @{name=$name; path=$command.Source; candidates=@($candidates.Source); version=(Get-Item $command.Source).VersionInfo.FileVersion; sha256=(Get-FileHash $command.Source).Hash}
 }
 $msc = if ($env:DIAGNOSTIC_TOOLSET.StartsWith('14.50.')) {1950} elseif ($env:DIAGNOSTIC_TOOLSET.StartsWith('14.52.')) {1952} else {throw 'Unexpected toolset'}
 @"

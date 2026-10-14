@@ -21,6 +21,11 @@ $installer = Join-Path $env:TEMP "vs_$edition.exe"
 Invoke-WebRequest "https://aka.ms/vs/18/stable/vs_$edition.exe" -OutFile $installer
 $signature = Get-AuthenticodeSignature $installer
 if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Microsoft Corporation') { throw 'Invalid VS installer signature' }
+$updateArguments = @('update', '--installPath', ('"{0}"' -f $instance.installationPath), '--channelUri', 'https://aka.ms/vs/18/stable/channel', '--quiet', '--wait', '--norestart', '--nocache')
+$update = Start-Process $installer -ArgumentList $updateArguments -PassThru -Wait
+if ($update.ExitCode -notin @(0,3010)) { throw "VS update failed: $($update.ExitCode)" }
+@(& $vswhere -products '*' -version '[18,19)' -format json | ConvertFrom-Json) |
+    ConvertTo-Json -Depth 20 | Set-Content "$evidence/vs-updated.json"
 $arguments = @('modify', '--installPath', ('"{0}"' -f $instance.installationPath), '--quiet', '--wait', '--norestart', '--nocache')
 foreach ($component in $components) { $arguments += @('--add', $component) }
 $process = Start-Process $installer -ArgumentList $arguments -PassThru -Wait
@@ -29,10 +34,13 @@ $folder = Get-ChildItem (Join-Path $instance.installationPath 'VC/Tools/MSVC') -
     Where-Object { $_.Name.StartsWith("$Toolset.") -and (Test-Path "$($_.FullName)/bin/Hostarm64/arm64/cl.exe") } |
     Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1
 if (!$folder) { throw "Requested native ARM64 toolset $Toolset was not installed" }
+$compilerVersion = [version](Get-Item "$($folder.FullName)/bin/Hostarm64/arm64/cl.exe").VersionInfo.FileVersion
+$minimum = if ($Toolset -eq '14.50') { [version]'19.50.35739.0' } else { [version]'19.52.36815.0' }
+if ($compilerVersion -lt $minimum) { throw "Installed compiler $compilerVersion predates the reviewed current catalog ($minimum)" }
 $inventory = Get-ChildItem "$($folder.FullName)/bin/Hostarm64/arm64" -File |
     Where-Object Name -Match '^(cl|link|c1|c1xx|c2|pgomgr|pgort|mspdb|msobj)' |
     ForEach-Object { @{path=$_.FullName; fileVersion=$_.VersionInfo.FileVersion; sha256=(Get-FileHash $_.FullName).Hash} }
-@{requested=$Toolset; folder=$folder.FullName; components=$components; installerExit=$process.ExitCode; files=@($inventory)} |
+@{requested=$Toolset; folder=$folder.FullName; components=$components; updateExit=$update.ExitCode; installerExit=$process.ExitCode; files=@($inventory)} |
     ConvertTo-Json -Depth 10 | Set-Content "$evidence/installation.json"
 Add-Content $env:GITHUB_ENV "DIAGNOSTIC_TOOLSET=$($folder.Name)"
 Add-Content $env:GITHUB_ENV "DIAGNOSTIC_TOOLSET_PATH=$($folder.FullName)"
