@@ -1,4 +1,4 @@
-name: Compare original and corrected core using the production test harness
+name: Trace CGI exits using production settings and published x64 control
 on: workflow_dispatch
 permissions:
   contents: read
@@ -6,14 +6,14 @@ permissions:
 jobs:
   runtime:
     runs-on: windows-11-vs2026-arm
-    timeout-minutes: 30
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
-        mode: [original, no-shrink-wrap]
-        cache: [nocache, opcache]
+        arch: [arm64, x64]
+        mode: [full, signals]
     env:
-      DEPS_DIR: C:\deps-8.6-arm64
+      DEPS_DIR: C:\deps-8.7-arm64
       DEPS_CACHE_HIT: 'true'
       GITHUB_TOKEN: ${{ github.token }}
     steps:
@@ -30,31 +30,26 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: shivammathur/php-src
-          ref: fix/windows-arm64-8.6
+          ref: ${{ matrix.arch == 'arm64' && 'fix/windows-arm64-master' || 'fix/windows-arm64-8.4' }}
           path: source
       - uses: actions/cache/restore@v5
+        if: matrix.arch == 'arm64'
         with:
-          path: C:\deps-8.6-arm64
-          key: deps-8.6-arm64-850eaaf43fd92eff-0a308cab04b4723b6d360aab9e3e4a38f0006e95d8696d1b5f9e71cbf88827b3
+          path: C:\deps-8.7-arm64
+          key: deps-8.7-arm64-850eaaf43fd92eff-0a308cab04b4723b6d360aab9e3e4a38f0006e95d8696d1b5f9e71cbf88827b3
           fail-on-cache-miss: true
       - uses: actions/download-artifact@v8
+        if: matrix.arch == 'arm64'
         with:
           name: artifacts
-          run-id: 38476128354
+          run-id: 38487078004
           github-token: ${{ github.token }}
           path: artifacts
-      - uses: actions/download-artifact@v8
-        if: matrix.mode == 'no-shrink-wrap'
-        with:
-          name: core-link-no-shrink-wrap
-          run-id: 38484957711
-          github-token: ${{ github.token }}
-          path: relink
-      - name: Run complete core tests with unchanged production settings
+      - name: Observe CGI child exits with unchanged binaries
         shell: pwsh
-        run: ./diagnostics/core-runtime-reviewed.ps1 -Mode '${{ matrix.mode }}' -Cache '${{ matrix.cache }}'
+        run: ./diagnostics/cgi-full-trace.ps1 -Arch '${{ matrix.arch }}' -Mode '${{ matrix.mode }}'
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: reviewed-core-${{ matrix.mode }}-${{ matrix.cache }}
+          name: cgi-trace-${{ matrix.arch }}-${{ matrix.mode }}
           path: results
