@@ -5,6 +5,8 @@ $log = Join-Path $env:RUNNER_TEMP 'php-sdk-build.log'
 if (Test-Path $log) {
     Copy-Item $log $destination
 }
+$resources = Join-Path $env:RUNNER_TEMP 'pgo-resources.jsonl'
+if (Test-Path $resources) { Copy-Item $resources $destination }
 $source = (git rev-parse HEAD).Trim()
 [ordered]@{
     branch = $env:PGO_SOURCE_BRANCH
@@ -61,4 +63,10 @@ if (@($summary | Where-Object { $_.status -ne 200 }).Count) {
 }
 if ($content -match 'Not all HTTP responses|PHP Fatal error|Access violation|0xc0000005') {
     throw 'PGO log contains a crash or unsuccessful training warning'
+}
+$trainingErrors = @(Get-ChildItem $destination -File -Filter 'php-*-error.log' |
+    Select-String -Pattern 'mysqli.*(?:HY000|Connection|connect)|PHP Fatal error|Access violation')
+if ($trainingErrors.Count) {
+    $trainingErrors | ForEach-Object { Write-Host $_.Line }
+    throw 'PHP error logs show incomplete training despite the HTTP response status'
 }
