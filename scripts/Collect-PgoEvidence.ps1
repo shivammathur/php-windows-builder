@@ -47,7 +47,15 @@ $summary = @($responses | ForEach-Object {
 })
 ConvertTo-Json -InputObject $summary | Set-Content (Join-Path $destination 'http-responses.json')
 $summary | Format-Table | Out-String | Write-Host
-if ($responses.Count -lt 2) { throw 'Expected HTTP training summaries for default and cache scenarios' }
+$expectedPasses = if ($env:PGO_VARIANT -eq 'candidate') { 3 } else { 2 }
+if ($responses.Count -ne $expectedPasses) { throw "Expected $expectedPasses HTTP training summaries" }
+$stages = @('initialized', 'default', 'cache')
+if ($env:PGO_VARIANT -eq 'candidate') { $stages += 'cache-no-jit' }
+foreach ($stage in $stages) {
+    if (-not @(Get-ChildItem (Join-Path $destination "profiles/$stage") -Filter '*.pgd.txt' -ErrorAction SilentlyContinue).Count) {
+        throw "Missing profile statistics for $stage"
+    }
+}
 if (@($summary | Where-Object { $_.status -ne 200 }).Count) {
     throw 'PGO training returned unsuccessful HTTP responses'
 }

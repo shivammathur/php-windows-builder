@@ -97,6 +97,7 @@ jobs:
           PHP_BUILD_PROVIDER: "The PHP Group"
           PGO_SDK_REF: ${{ inputs.sdk-ref }}
           PGO_SDK_REPOSITORY: ${{ inputs.sdk-repository }}
+          PGO_VARIANT: ${{ inputs.variant }}
 
       - name: Collect and validate PGO evidence
         if: always()

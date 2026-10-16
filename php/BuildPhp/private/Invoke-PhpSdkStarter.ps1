@@ -27,6 +27,7 @@ function Invoke-PhpSdkStarter {
     begin {
     }
     process {
+        $env:PGO_EVIDENCE_SCRIPT = Join-Path $PSScriptRoot '..\..\..\scripts\Save-PgoProfile.ps1'
         $toolsetArgs = if ($VsConfig.vs -eq 'vs18') { @() } else { @('-s', $VsConfig.toolset) }
         & "$BuildDirectory\php-sdk\phpsdk-starter.bat" -c $VsConfig.vs -a $Arch @toolsetArgs -t $Task 2>&1 |
             Tee-Object -FilePath (Join-Path $env:RUNNER_TEMP 'php-sdk-build.log')
