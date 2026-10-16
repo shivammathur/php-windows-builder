@@ -31,6 +31,10 @@ on:
         description: Add SBOM files to binary archives
         required: false
         default: 'true'
+      benchmark-only:
+        type: boolean
+        description: Build and smoke-test benchmark controls without repeating the full PHPT matrix
+        default: false
 
 jobs:
   resolve-runner:
@@ -132,6 +136,7 @@ jobs:
           delete-merged: true
 
   tests:
+    if: ${{ !inputs.benchmark-only }}
     needs: [resolve-runner, artifacts]
     strategy:
       fail-fast: false
