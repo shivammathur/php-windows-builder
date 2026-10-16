@@ -1,5 +1,5 @@
 name: Build PHP with custom library builds from winlibs/winlib-builder (source)
-run-name: Build PHP from source ${{ inputs.php-src-ref }}
+run-name: PGO JIT ${{ inputs.variant }} ${{ inputs.php-src-ref }}
 on:
   workflow_dispatch:
     inputs:
@@ -8,6 +8,19 @@ on:
         required: true
       php-src-ref:
         description: 'Branch, tag, or SHA in the php-src repository to source builds and tests from'
+        required: true
+      source-sha:
+        description: Exact commit on the requested source branch
+        required: true
+      sdk-ref:
+        description: Exact php-sdk-binary-tools commit
+        required: true
+      sdk-repository:
+        description: SDK repository
+        required: true
+      variant:
+        type: choice
+        options: [baseline, candidate]
         required: true
       libs-build-runs:
         description: 'Comma-separated list of GitHub Actions run IDs from winlibs/winlib-builder'
@@ -29,7 +42,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: ${{ inputs.php-src-repository }}
-          ref: ${{ inputs.php-src-ref }}
+          ref: ${{ inputs.source-sha }}
           token: ${{ secrets.GITHUB_TOKEN }}
           path: php-src
           fetch-depth: 1
@@ -48,6 +61,7 @@ jobs:
   php:
     needs: resolve-runner
     strategy:
+      fail-fast: false
       matrix:
         arch: [x64, x86]
         ts: [nts, ts]
@@ -63,7 +77,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: ${{ inputs.php-src-repository }}
-          ref: ${{ inputs.php-src-ref }}
+          ref: ${{ inputs.source-sha }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Checkout
@@ -81,6 +95,26 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
         env:
           PHP_BUILD_PROVIDER: "The PHP Group"
+          PGO_SDK_REF: ${{ inputs.sdk-ref }}
+          PGO_SDK_REPOSITORY: ${{ inputs.sdk-repository }}
+
+      - name: Collect and validate PGO evidence
+        if: always()
+        shell: pwsh
+        env:
+          PGO_VARIANT: ${{ inputs.variant }}
+          PGO_SOURCE_BRANCH: ${{ inputs.php-src-ref }}
+          PGO_SOURCE_SHA: ${{ inputs.source-sha }}
+          PGO_SDK_REF: ${{ inputs.sdk-ref }}
+        run: ./builder/scripts/Collect-PgoEvidence.ps1
+
+      - name: Upload PGO evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pgo-evidence-${{ matrix.arch }}-${{ matrix.ts }}
+          path: ${{ runner.temp }}/pgo-evidence
+          if-no-files-found: error
 
   artifacts:
     runs-on: ubuntu-latest
@@ -93,11 +127,13 @@ jobs:
         id: artifacts
         with:
           name: artifacts
+          pattern: artifacts-*
           delete-merged: true
 
   tests:
     needs: [resolve-runner, artifacts]
     strategy:
+      fail-fast: false
       matrix:
         arch: [x64, x86]
         ts: [nts, ts]
@@ -157,7 +193,7 @@ jobs:
                           -Opcache ${{matrix.opcache}} `
                           -TestType ${{matrix.test-type}} `
                           -SourceRepository '${{ inputs.php-src-repository }}' `
-                          -SourceRef '${{ inputs.php-src-ref }}'
+                          -SourceRef '${{ inputs.source-sha }}'
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
@@ -168,6 +204,7 @@ jobs:
 
   smoke-tests:
     strategy:
+      fail-fast: false
       matrix:
         arch: [x64, x86]
         ts: [nts, ts]

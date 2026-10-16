@@ -28,7 +28,8 @@ function Invoke-PhpSdkStarter {
     }
     process {
         $toolsetArgs = if ($VsConfig.vs -eq 'vs18') { @() } else { @('-s', $VsConfig.toolset) }
-        & "$BuildDirectory\php-sdk\phpsdk-starter.bat" -c $VsConfig.vs -a $Arch @toolsetArgs -t $Task
+        & "$BuildDirectory\php-sdk\phpsdk-starter.bat" -c $VsConfig.vs -a $Arch @toolsetArgs -t $Task 2>&1 |
+            Tee-Object -FilePath (Join-Path $env:RUNNER_TEMP 'php-sdk-build.log')
         if ($LASTEXITCODE -ne 0) {
             throw "build failed with errorlevel $LASTEXITCODE"
         }
