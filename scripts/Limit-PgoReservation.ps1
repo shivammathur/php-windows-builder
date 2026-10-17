@@ -10,8 +10,8 @@ if ($content -match '/USEPROFILE|/LTCG:PGUPDATE') { throw 'Reservation limit mus
 if ($content -notmatch '/GENPROFILE|/LTCG:PGINSTRUMENT') { throw 'No PGO instrumentation flags found' }
 # Bound each instrumented module's reserved address space. Preserve GENPROFILE's
 # 64-bit counters, path tracking and exception tracking; do not use FASTGENPROFILE.
-$profile = '/GENPROFILE:MEMMAX=268435456'
+$profile = '/GENPROFILE:MEMMAX=67108864'
 $content = $content -replace '/GENPROFILE(?![\w:])', $profile
 $content = $content -replace '/LTCG:PGINSTRUMENT\b', "/LTCG $profile"
 [IO.File]::WriteAllText($path, $content)
-Write-Host 'Limited x86 PGO reservation to 256 MiB per instrumented module.'
+Write-Host 'Limited x86 PGO reservation to 64 MiB per instrumented module.'

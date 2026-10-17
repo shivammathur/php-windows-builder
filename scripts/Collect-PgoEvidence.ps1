@@ -7,6 +7,10 @@ if (Test-Path $log) {
 }
 $resources = Join-Path $env:RUNNER_TEMP 'pgo-resources.jsonl'
 if (Test-Path $resources) { Copy-Item $resources $destination }
+$mergeLog = Join-Path $env:RUNNER_TEMP 'pgo-merge.log'
+if (Test-Path $mergeLog) { Copy-Item $mergeLog $destination }
+$addressSpaces = Join-Path $env:RUNNER_TEMP 'pgo-address-spaces'
+if (Test-Path $addressSpaces) { Copy-Item $addressSpaces $destination -Recurse }
 $source = (git rev-parse HEAD).Trim()
 [ordered]@{
     branch = $env:PGO_SOURCE_BRANCH
@@ -70,6 +74,13 @@ $trainingErrors = @(Get-ChildItem $destination -File -Filter 'php-*-error.log' |
 if ($trainingErrors.Count) {
     $trainingErrors | ForEach-Object { Write-Host $_.Line }
     throw 'PHP error logs show incomplete training despite the HTTP response status'
+}
+if (-not (Test-Path $mergeLog)) { throw 'Missing profile merge diagnostics' }
+$mergeOutput = Get-Content $mergeLog -Raw
+$overflows = @([regex]::Matches($mergeOutput, '([\d.]+)% of the counts were dropped due to overflow'))
+if (-not $overflows.Count) { throw 'No PGO counter-overflow diagnostics were recorded' }
+if (@($overflows | Where-Object { [double]$_.Groups[1].Value -gt 0 }).Count) {
+    throw 'PGO profiling reservation dropped counters; these artifacts are not valid benchmark candidates'
 }
 
 # Both compilation phases must instrument/optimize extension objects, not only core objects.

@@ -31,9 +31,11 @@ function Invoke-PhpSdkStarter {
         $env:PGO_RESERVATION_SCRIPT = Join-Path $PSScriptRoot '..\..\..\scripts\Limit-PgoReservation.ps1'
         $toolsetArgs = if ($VsConfig.vs -eq 'vs18') { @() } else { @('-s', $VsConfig.toolset) }
         $resources = Join-Path $env:RUNNER_TEMP 'pgo-resources.jsonl'
-        $monitor = Start-Job -ArgumentList $resources -ScriptBlock {
-            param($destination)
+        $addressSpaceScript = Join-Path $PSScriptRoot '..\..\..\scripts\Get-PgoAddressSpace.ps1'
+        $monitor = Start-Job -ArgumentList $resources,$addressSpaceScript,$Arch -ScriptBlock {
+            param($destination, $addressSpaceScript, $arch)
             $sample = 0
+            $captured = @{}
             while ($true) {
                 $memory = Get-CimInstance Win32_OperatingSystem
                 $processes = @(Get-Process -Name php-cgi,mysqld,cl,link -ErrorAction SilentlyContinue |
@@ -49,6 +51,16 @@ function Invoke-PhpSdkStarter {
                     processes = $processes
                     tcp_states = $tcp
                 } | ConvertTo-Json -Compress -Depth 5 | Add-Content $destination
+                if ($arch -eq 'x86') {
+                    foreach ($process in @($processes | Where-Object { $_.ProcessName -eq 'php-cgi' -and $_.VirtualMemorySize64 -gt 1GB })) {
+                        if (-not $captured.ContainsKey($process.Id)) {
+                            try {
+                                & $addressSpaceScript -ProcessId $process.Id -Destination (Join-Path $env:RUNNER_TEMP 'pgo-address-spaces')
+                                $captured[$process.Id] = $true
+                            } catch { Write-Warning "Address-space sample unavailable: $_" }
+                        }
+                    }
+                }
                 Start-Sleep -Seconds 2
             }
         }
