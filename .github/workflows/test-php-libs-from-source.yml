@@ -20,7 +20,7 @@ on:
         required: true
       variant:
         type: choice
-        options: [baseline, candidate]
+        options: [baseline, candidate, nojit]
         required: true
       libs-build-runs:
         description: 'Comma-separated list of GitHub Actions run IDs from winlibs/winlib-builder'

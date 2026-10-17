@@ -106,3 +106,45 @@ $jitEntries = @($finalProfiles | Select-String -Pattern '^\s*_?zend_jit\w+')
 if (-not $jitEntries.Count) { throw 'Final PGO profile has no native JIT functions' }
 $jitEntries.Line | Set-Content (Join-Path $destination 'jit-profile-functions.txt')
 Write-Host "Verified /GL /O2 in both compilation phases and $($jitEntries.Count) native JIT profile entries."
+
+# Entries with zero counters do not prove JIT was enabled. Verify executed trace
+# compilation and exit counters as well as the generated cached-training INI.
+$traceCounters = @()
+foreach ($profile in $finalProfiles) {
+    $profileText = Get-Content $profile.FullName -Raw
+    foreach ($match in [regex]::Matches($profileText, '(?m)^\s*(_?zend_jit_(?:compile_root_trace|compile_side_trace|trace_exit)(?:@@\d+)?)\s+(\d+)\s+\d+\s+(\d+)\s+[\d.]+\s+[\d.]+\s*$')) {
+        $traceCounters += [pscustomobject]@{
+            function = $match.Groups[1].Value
+            entry_count = [long]$match.Groups[2].Value
+            dynamic_instructions = [long]$match.Groups[3].Value
+        }
+    }
+}
+if (-not $traceCounters.Count) { throw 'Missing trace compilation/exit counters' }
+$cacheInis = @(Get-ChildItem (Join-Path $destination 'profiles/cache') -Filter 'ini*' -File |
+    Where-Object { (Get-Content $_.FullName -Raw) -match '(?m)^opcache\.enable=1\s*$' })
+if (-not $cacheInis.Count) { throw 'Missing cached-training INI' }
+$jitExpected = $env:PGO_VARIANT -ne 'nojit'
+if ($jitExpected) {
+    if (-not @($traceCounters | Where-Object { $_.function -match 'compile_root_trace' -and $_.entry_count -gt 0 }).Count) {
+        throw 'Tracing JIT did not compile any root traces'
+    }
+    if (-not @($cacheInis | Where-Object { (Get-Content $_.FullName -Raw) -match '(?m)^opcache\.jit=tracing\s*$' }).Count) {
+        throw 'Missing tracing JIT configuration'
+    }
+} else {
+    if (@($traceCounters | Where-Object entry_count -gt 0).Count) { throw 'No-JIT training executed JIT traces' }
+    foreach ($ini in $cacheInis) {
+        if ((Get-Content $ini.FullName -Raw) -match '(?m)^opcache\.jit(?:_buffer_size)?\s*=') {
+            throw 'SDK master control unexpectedly overrides default JIT settings'
+        }
+    }
+    if (Test-Path (Join-Path $destination 'profiles/cache-no-jit')) { throw 'Unexpected accumulation training pass' }
+}
+[ordered]@{
+    jit_training_expected = $jitExpected
+    cached_ini_files = @($cacheInis.Name)
+    trace_counters = $traceCounters
+    training_passes = $expectedPasses
+} | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $destination 'jit-training-validation.json')
+Write-Host "Verified JIT training enabled=$jitExpected using executed profile counters."
