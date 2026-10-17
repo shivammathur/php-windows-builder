@@ -52,7 +52,7 @@ function Invoke-PhpSdkStarter {
                     tcp_states = $tcp
                 } | ConvertTo-Json -Compress -Depth 5 | Add-Content $destination
                 if ($arch -eq 'x86') {
-                    foreach ($process in @($processes | Where-Object { $_.ProcessName -eq 'php-cgi' -and $_.VirtualMemorySize64 -gt 1GB })) {
+                    foreach ($process in @($processes | Where-Object { $_.ProcessName -eq 'php-cgi' -and $_.VirtualMemorySize64 -gt 256MB })) {
                         if (-not $captured.ContainsKey($process.Id)) {
                             try {
                                 & $addressSpaceScript -ProcessId $process.Id -Destination (Join-Path $env:RUNNER_TEMP 'pgo-address-spaces')
