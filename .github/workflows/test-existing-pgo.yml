@@ -16,6 +16,10 @@ on:
         type: choice
         options: [windows-2022, windows-2025-vs2026]
         required: true
+      arch:
+        type: choice
+        options: [x64, x86]
+        default: x64
       ts:
         type: choice
         options: [all, nts, ts]
@@ -47,7 +51,7 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v6
-      - name: Require successful x64 build and PGO validation
+      - name: Require successful build and PGO validation
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -58,7 +62,7 @@ jobs:
           do {
             $jobs = & gh api "repos/shivammathur/php-windows-builder/actions/runs/$env:BUILD_RUN/jobs?per_page=100" | ConvertFrom-Json
             if ($LASTEXITCODE -ne 0) { throw 'Cannot query build jobs' }
-            $job = @($jobs.jobs | Where-Object name -eq 'php (x64, ${{ matrix.ts }})')
+            $job = @($jobs.jobs | Where-Object name -eq 'php (${{ inputs.arch }}, ${{ matrix.ts }})')
             if ($job.Count -eq 1 -and $job[0].status -eq 'completed') {
               if ($job[0].conclusion -ne 'success') { throw 'This lane failed build or PGO validation' }
               break
@@ -68,18 +72,18 @@ jobs:
           } while ($true)
           $available = & gh api "repos/shivammathur/php-windows-builder/actions/runs/$env:BUILD_RUN/artifacts?per_page=100" | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0) { throw 'Cannot query build artifacts' }
-          $name = if ('artifacts' -in $available.artifacts.name) { 'artifacts' } else { 'artifacts-source-x64-${{ matrix.ts }}' }
+          $name = if ('artifacts' -in $available.artifacts.name) { 'artifacts' } else { 'artifacts-source-${{ inputs.arch }}-${{ matrix.ts }}' }
           gh run download $env:BUILD_RUN --repo shivammathur/php-windows-builder --name $name --dir artifacts
           if ($LASTEXITCODE -ne 0) { throw 'Artifact download failed' }
       - name: Resolve dependencies
         id: deps
         shell: pwsh
         run: |
-          $zip = Get-ChildItem artifacts -Filter 'php-*.zip' -Recurse | Where-Object { $_.Name -match '^php-(.+?)-(?:nts-)?Win32-v[sc]\d+-x64\.zip$' } | Select-Object -First 1
+          $zip = Get-ChildItem artifacts -Filter 'php-*.zip' -Recurse | Where-Object { $_.Name -match '^php-(.+?)-(?:nts-)?Win32-v[sc]\d+-${{ inputs.arch }}\.zip$' } | Select-Object -First 1
           if ($null -eq $zip) { throw 'Missing runtime archive' }
           $version = [regex]::Match($zip.Name, '^php-(.+?)-(?:nts-)?Win32-v[sc]\d+-').Groups[1].Value
           Import-Module ./php/BuildPhp -Force
-          $cache = Get-DepsCacheInfo -PhpVersion $version -Arch x64 -IncludeDefaultRunsKey
+          $cache = Get-DepsCacheInfo -PhpVersion $version -Arch '${{ inputs.arch }}' -IncludeDefaultRunsKey
           Set-Content packages.txt ($cache.Packages -join "`n")
           "version=$version" >> $env:GITHUB_OUTPUT
           "key=$($cache.CacheKey)" >> $env:GITHUB_OUTPUT
@@ -94,7 +98,7 @@ jobs:
         shell: pwsh
         run: |
           Import-Module ./php/BuildPhp -Force
-          Invoke-PhpSmokeTests -ArtifactsDirectory (Resolve-Path artifacts).Path -Arch x64 -Ts '${{ matrix.ts }}'
+          Invoke-PhpSmokeTests -ArtifactsDirectory (Resolve-Path artifacts).Path -Arch '${{ inputs.arch }}' -Ts '${{ matrix.ts }}'
       - name: Run PHPT matrix
         shell: pwsh
         env:
@@ -106,13 +110,13 @@ jobs:
           Import-Module ./php/BuildPhp -Force
           Set-Location artifacts
           $directories = @($env:TEST_DIRECTORIES.Split(',') | Where-Object { $_.Trim() })
-          Invoke-PhpTests -PhpVersion '${{ steps.deps.outputs.version }}' -Arch x64 -Ts '${{ matrix.ts }}' -Opcache '${{ matrix.opcache }}' -TestType '${{ matrix.test-type }}' -SourceRepository shivammathur/php-src -SourceRef '${{ inputs.source-sha }}' -TestDirectories $directories -FailOnError
-          if (-not (Test-Path 'test-x64-${{ matrix.ts }}-${{ matrix.opcache }}-${{ matrix.test-type }}.xml')) { throw 'No PHPT results produced' }
+          Invoke-PhpTests -PhpVersion '${{ steps.deps.outputs.version }}' -Arch '${{ inputs.arch }}' -Ts '${{ matrix.ts }}' -Opcache '${{ matrix.opcache }}' -TestType '${{ matrix.test-type }}' -SourceRepository shivammathur/php-src -SourceRef '${{ inputs.source-sha }}' -TestDirectories $directories -FailOnError
+          if (-not (Test-Path 'test-${{ inputs.arch }}-${{ matrix.ts }}-${{ matrix.opcache }}-${{ matrix.test-type }}.xml')) { throw 'No PHPT results produced' }
       - name: Upload PHPT evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: test-results-x64-${{ matrix.ts }}-${{ matrix.opcache }}-${{ matrix.test-type }}
+          name: test-results-${{ inputs.arch }}-${{ matrix.ts }}-${{ matrix.opcache }}-${{ matrix.test-type }}
           path: |
             artifacts/test-*.xml
             artifacts/test-*.log
