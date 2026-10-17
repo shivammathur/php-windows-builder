@@ -1,0 +1,102 @@
+name: Validate existing PGO artifacts
+run-name: PGO artifact tests ${{ inputs.label }}
+on:
+  push:
+    branches: [test/static-extension-pgo]
+    paths: [.github/workflows/test-existing-pgo.yml]
+  workflow_dispatch:
+    inputs:
+      build-run:
+        required: true
+      source-sha:
+        required: true
+      label:
+        required: true
+      runner:
+        type: choice
+        options: [windows-2022, windows-2025-vs2026]
+        required: true
+permissions:
+  contents: read
+  actions: read
+jobs:
+  test:
+    if: github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        ts: [nts, ts]
+        opcache: [opcache, nocache]
+        test-type: [php, ext]
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+      - name: Require successful x64 build and PGO validation
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BUILD_RUN: ${{ inputs.build-run }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $deadline = [DateTime]::UtcNow.AddMinutes(45)
+          do {
+            $jobs = & gh api "repos/shivammathur/php-windows-builder/actions/runs/$env:BUILD_RUN/jobs?per_page=100" | ConvertFrom-Json
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot query build jobs' }
+            $job = @($jobs.jobs | Where-Object name -eq 'php (x64, ${{ matrix.ts }})')
+            if ($job.Count -eq 1 -and $job[0].status -eq 'completed') {
+              if ($job[0].conclusion -ne 'success') { throw 'This lane failed build or PGO validation' }
+              break
+            }
+            if ([DateTime]::UtcNow -gt $deadline) { throw 'Build wait timed out' }
+            Start-Sleep -Seconds 30
+          } while ($true)
+          $available = & gh api "repos/shivammathur/php-windows-builder/actions/runs/$env:BUILD_RUN/artifacts?per_page=100" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot query build artifacts' }
+          $name = if ('artifacts' -in $available.artifacts.name) { 'artifacts' } else { 'artifacts-source-x64-${{ matrix.ts }}' }
+          gh run download $env:BUILD_RUN --repo shivammathur/php-windows-builder --name $name --dir artifacts
+          if ($LASTEXITCODE -ne 0) { throw 'Artifact download failed' }
+      - name: Resolve dependencies
+        id: deps
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem artifacts -Filter 'php-*.zip' -Recurse | Where-Object { $_.Name -match '^php-(.+?)-(?:nts-)?Win32-v[sc]\d+-x64\.zip$' } | Select-Object -First 1
+          if ($null -eq $zip) { throw 'Missing runtime archive' }
+          $version = [regex]::Match($zip.Name, '^php-(.+?)-(?:nts-)?Win32-v[sc]\d+-').Groups[1].Value
+          Import-Module ./php/BuildPhp -Force
+          $cache = Get-DepsCacheInfo -PhpVersion $version -Arch x64 -IncludeDefaultRunsKey
+          Set-Content packages.txt ($cache.Packages -join "`n")
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "key=$($cache.CacheKey)" >> $env:GITHUB_OUTPUT
+          "directory=$($cache.CacheDir)" >> $env:GITHUB_OUTPUT
+      - uses: actions/cache@v5
+        id: cache
+        with:
+          path: ${{ steps.deps.outputs.directory }}
+          key: ${{ steps.deps.outputs.key }}-${{ hashFiles('packages.txt') }}
+      - name: Smoke test archive
+        if: matrix.opcache == 'opcache' && matrix.test-type == 'php'
+        shell: pwsh
+        run: |
+          Import-Module ./php/BuildPhp -Force
+          Invoke-PhpSmokeTests -ArtifactsDirectory (Resolve-Path artifacts).Path -Arch x64 -Ts '${{ matrix.ts }}'
+      - name: Run PHPT matrix
+        shell: pwsh
+        env:
+          DEPS_DIR: ${{ steps.deps.outputs.directory }}
+          DEPS_CACHE_HIT: ${{ steps.cache.outputs.cache-hit }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          Import-Module ./php/BuildPhp -Force
+          Set-Location artifacts
+          Invoke-PhpTests -PhpVersion '${{ steps.deps.outputs.version }}' -Arch x64 -Ts '${{ matrix.ts }}' -Opcache '${{ matrix.opcache }}' -TestType '${{ matrix.test-type }}' -SourceRepository shivammathur/php-src -SourceRef '${{ inputs.source-sha }}'
+          if (-not (Test-Path 'test-x64-${{ matrix.ts }}-${{ matrix.opcache }}-${{ matrix.test-type }}.xml')) { throw 'No PHPT results produced' }
+      - name: Upload PHPT evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-x64-${{ matrix.ts }}-${{ matrix.opcache }}-${{ matrix.test-type }}
+          path: |
+            artifacts/test-*.xml
+            artifacts/test-*.log
+          if-no-files-found: warn
