@@ -42,6 +42,7 @@ if (Test-Path $obj) {
     }
 }
 if (-not (Test-Path $log)) { throw 'Missing build log' }
+if (Test-Path Makefile) { Copy-Item Makefile (Join-Path $destination 'Makefile.pgo') }
 $content = Get-Content $log -Raw
 $responses = @([regex]::Matches($content, '(?m)^\s*(\d+) received (\d+) times\s*$'))
 $summary = @($responses | ForEach-Object {
@@ -70,3 +71,27 @@ if ($trainingErrors.Count) {
     $trainingErrors | ForEach-Object { Write-Host $_.Line }
     throw 'PHP error logs show incomplete training despite the HTTP response status'
 }
+
+# Both compilation phases must instrument/optimize extension objects, not only core objects.
+$compileChecks = @()
+foreach ($sourceGroup in @('Zend\zend.c', 'ext\standard\', 'ext\opcache\ZendAccelerator.c', 'ext\opcache\jit\zend_jit.c')) {
+    $commands = @($content -split "`n" | Where-Object {
+        $_ -match 'cl\.exe' -and $_.Contains(" /c $sourceGroup")
+    })
+    $check = [ordered]@{
+        source = $sourceGroup
+        commands = $commands
+        has_both_phases = $commands.Count -ge 2
+        all_have_gl_o2 = @($commands | Where-Object { $_ -notmatch ' /GL\b' -or $_ -notmatch ' /O2\b' }).Count -eq 0
+    }
+    $compileChecks += [pscustomobject]$check
+}
+$compileChecks | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $destination 'static-pgo-compiler-checks.json')
+if (@($compileChecks | Where-Object { -not $_.has_both_phases -or -not $_.all_have_gl_o2 }).Count) {
+    throw 'Static-extension /GL /O2 verification failed'
+}
+$finalProfiles = @(Get-ChildItem (Join-Path $destination 'profiles/cache') -Filter '*.pgd.txt')
+$jitEntries = @($finalProfiles | Select-String -Pattern '^\s*_?zend_jit\w+')
+if (-not $jitEntries.Count) { throw 'Final PGO profile has no native JIT functions' }
+$jitEntries.Line | Set-Content (Join-Path $destination 'jit-profile-functions.txt')
+Write-Host "Verified /GL /O2 in both compilation phases and $($jitEntries.Count) native JIT profile entries."

@@ -9,6 +9,7 @@ if (-not $match.Success) { throw 'Missing BUILD_DIR in Makefile' }
 $buildDirectory = $match.Groups[1].Value.Trim()
 $destination = Join-Path $env:RUNNER_TEMP "pgo-evidence/profiles/$Stage"
 New-Item -ItemType Directory -Force $destination | Out-Null
+Copy-Item Makefile (Join-Path $destination 'Makefile')
 $databases = @(Get-ChildItem $buildDirectory -File -Filter '*.pgd' |
     Where-Object { $_.Name -match '^php(?:8(?:ts)?|_opcache)\.pgd$' })
 if (-not $databases.Count) { throw "No core PGO database in $buildDirectory" }

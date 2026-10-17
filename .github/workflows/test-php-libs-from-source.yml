@@ -1,5 +1,5 @@
 name: Build PHP with custom library builds from winlibs/winlib-builder (source)
-run-name: PGO JIT ${{ inputs.variant }} ${{ inputs.php-src-ref }}
+run-name: Static PGO ${{ inputs.variant }} ${{ inputs.php-src-ref }}
 on:
   workflow_dispatch:
     inputs:
