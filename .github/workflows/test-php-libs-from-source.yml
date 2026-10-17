@@ -35,6 +35,10 @@ on:
         type: boolean
         description: Build and smoke-test benchmark controls without repeating the full PHPT matrix
         default: false
+      arch:
+        type: choice
+        options: [all, x64, x86]
+        default: all
 
 jobs:
   resolve-runner:
@@ -67,7 +71,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x64, x86]
+        arch: ${{ fromJSON(inputs.arch == 'all' && '["x64","x86"]' || format('["{0}"]', inputs.arch)) }}
         ts: [nts, ts]
     runs-on: ${{ needs.resolve-runner.outputs.runner }}
     steps:
@@ -141,7 +145,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x64, x86]
+        arch: ${{ fromJSON(inputs.arch == 'all' && '["x64","x86"]' || format('["{0}"]', inputs.arch)) }}
         ts: [nts, ts]
         opcache: [opcache, nocache]
         test-type: [php, ext]
@@ -212,7 +216,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x64, x86]
+        arch: ${{ fromJSON(inputs.arch == 'all' && '["x64","x86"]' || format('["{0}"]', inputs.arch)) }}
         ts: [nts, ts]
     runs-on: ${{ needs.resolve-runner.outputs.runner }}
     needs: [resolve-runner, artifacts]

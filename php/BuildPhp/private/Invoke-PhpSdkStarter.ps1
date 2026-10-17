@@ -28,6 +28,7 @@ function Invoke-PhpSdkStarter {
     }
     process {
         $env:PGO_EVIDENCE_SCRIPT = Join-Path $PSScriptRoot '..\..\..\scripts\Save-PgoProfile.ps1'
+        $env:PGO_RESERVATION_SCRIPT = Join-Path $PSScriptRoot '..\..\..\scripts\Limit-PgoReservation.ps1'
         $toolsetArgs = if ($VsConfig.vs -eq 'vs18') { @() } else { @('-s', $VsConfig.toolset) }
         $resources = Join-Path $env:RUNNER_TEMP 'pgo-resources.jsonl'
         $monitor = Start-Job -ArgumentList $resources -ScriptBlock {

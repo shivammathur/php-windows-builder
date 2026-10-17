@@ -3,6 +3,8 @@ call buildconf.bat 2>&1
 if errorlevel 1 exit 1
 call config.ts.bat 2>&1
 if errorlevel 1 exit 2
+pwsh -NoProfile -File "%PGO_RESERVATION_SCRIPT%"
+if errorlevel 1 exit 12
 nmake 2>&1
 if errorlevel 1 exit 3
 call phpsdk_pgo --init 2>&1
