@@ -16,6 +16,21 @@ on:
         type: choice
         options: [windows-2022, windows-2025-vs2026]
         required: true
+      ts:
+        type: choice
+        options: [all, nts, ts]
+        default: all
+      opcache:
+        type: choice
+        options: [all, opcache, nocache]
+        default: all
+      test-type:
+        type: choice
+        options: [all, php, ext]
+        default: all
+      test-directories:
+        description: Optional comma-separated test directories for focused reproduction
+        default: ''
 permissions:
   contents: read
   actions: read
@@ -25,9 +40,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ts: [nts, ts]
-        opcache: [opcache, nocache]
-        test-type: [php, ext]
+        ts: ${{ fromJSON(inputs.ts == 'all' && '["nts","ts"]' || format('["{0}"]', inputs.ts)) }}
+        opcache: ${{ fromJSON(inputs.opcache == 'all' && '["opcache","nocache"]' || format('["{0}"]', inputs.opcache)) }}
+        test-type: ${{ fromJSON(inputs.test-type == 'all' && '["php","ext"]' || format('["{0}"]', inputs.test-type)) }}
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 90
     steps:
@@ -86,10 +101,12 @@ jobs:
           DEPS_DIR: ${{ steps.deps.outputs.directory }}
           DEPS_CACHE_HIT: ${{ steps.cache.outputs.cache-hit }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TEST_DIRECTORIES: ${{ inputs.test-directories }}
         run: |
           Import-Module ./php/BuildPhp -Force
           Set-Location artifacts
-          Invoke-PhpTests -PhpVersion '${{ steps.deps.outputs.version }}' -Arch x64 -Ts '${{ matrix.ts }}' -Opcache '${{ matrix.opcache }}' -TestType '${{ matrix.test-type }}' -SourceRepository shivammathur/php-src -SourceRef '${{ inputs.source-sha }}'
+          $directories = @($env:TEST_DIRECTORIES.Split(',') | Where-Object { $_.Trim() })
+          Invoke-PhpTests -PhpVersion '${{ steps.deps.outputs.version }}' -Arch x64 -Ts '${{ matrix.ts }}' -Opcache '${{ matrix.opcache }}' -TestType '${{ matrix.test-type }}' -SourceRepository shivammathur/php-src -SourceRef '${{ inputs.source-sha }}' -TestDirectories $directories -FailOnError
           if (-not (Test-Path 'test-x64-${{ matrix.ts }}-${{ matrix.opcache }}-${{ matrix.test-type }}.xml')) { throw 'No PHPT results produced' }
       - name: Upload PHPT evidence
         if: always()
