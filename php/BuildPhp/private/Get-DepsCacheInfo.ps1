@@ -50,7 +50,7 @@ function Get-DepsCacheInfo {
         $vsVersion = (Get-VsVersion -PhpVersion $PhpVersion).vs
         $packageData = Get-PhpDepsPackages -PhpVersion $PhpVersion -VsVersion $vsVersion -Arch $Arch
 
-        $cacheKey = "deps-$depsPhpVersion-$Arch"
+        $cacheKey = "deps-$depsPhpVersion-$vsVersion-$Arch"
         if ($runsKey) {
             $cacheKey += "-$runsKey"
         }

@@ -82,7 +82,7 @@ jobs:
           $vsVersion = (Get-Content -Raw -Path (Join-Path $(pwd).Path '\php\BuildPhp\config\vs.json') | ConvertFrom-Json).php.$pv
           $packagesListUrl = "https://downloads.php.net/~windows/php-sdk/deps/series/packages-$pv-$vsVersion-${{ matrix.arch }}-staging.txt"
           Invoke-WebRequest -OutFile packages.txt -Uri $packagesListUrl
-          Add-Content -Value "cache-key=deps-$pv-${{ matrix.arch }}" -Path $env:GITHUB_OUTPUT
+          Add-Content -Value "cache-key=deps-$pv-$vsVersion-${{ matrix.arch }}" -Path $env:GITHUB_OUTPUT
           Add-Content -Value "cache-dir=C:\deps-$pv-${{ matrix.arch }}" -Path $env:GITHUB_OUTPUT
 
       - name: Cache Deps
