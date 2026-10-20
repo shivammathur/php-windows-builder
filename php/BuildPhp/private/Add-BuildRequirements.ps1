@@ -28,6 +28,10 @@ function Add-BuildRequirements {
     process {
         Get-OciSdk -Arch $Arch
         Get-PhpSdk
+        if ($PhpVersion -match '^5\.6(\.|$)') {
+            Get-File -Url 'https://downloads.php.net/~windows/php-sdk/php-sdk-binary-tools-20110915.zip' -OutFile legacy-tools.zip
+            Expand-Archive legacy-tools.zip -DestinationPath legacy-tools
+        }
         if($FetchSrc) {
             Get-PhpSrc -PhpVersion $PhpVersion
         }

@@ -32,6 +32,25 @@ function Add-PhpDeps {
     }
 
     process {
+        if ($PhpVersion -match '^(5\.6|7\.0)(\.|$)') {
+            if ($env:LIBS_BUILD_RUNS) {
+                throw 'Workflow dependency overrides are not supported for legacy dependency bundles.'
+            }
+            $series = $Matches[1]
+            $archive = Join-Path $env:TEMP "deps-$series-$VsVersion-$Arch.7z"
+            Get-File -Url "https://downloads.php.net/~windows/php-sdk/archives/deps-$series-$VsVersion-${Arch}_2018-12.7z" -OutFile $archive
+            $extract = Join-Path $env:TEMP ([guid]::NewGuid().ToString())
+            try {
+                & 7z x $archive "-o$extract" -y | Out-Host
+                if ($LASTEXITCODE -ne 0) { throw "Extracting $archive failed" }
+                New-Item -ItemType Directory -Force -Path $Destination | Out-Null
+                Copy-Item "$extract\deps\*" $Destination -Recurse -Force
+            } finally {
+                Remove-Item $extract -Recurse -Force -ErrorAction SilentlyContinue
+            }
+            return
+        }
+
         if (-not (Test-Path -LiteralPath $Destination)) {
             New-Item -ItemType Directory -Force -Path $Destination | Out-Null
         }

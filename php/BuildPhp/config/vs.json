@@ -1,5 +1,7 @@
 {
   "php": {
+    "5.6": "vc11",
+    "7.0": "vc14",
     "7.1": "vc14",
     "7.2": "vc15",
     "7.3": "vc15",
@@ -15,6 +17,12 @@
     "master": "vs18"
   },
   "vs" : {
+    "vc11": {
+      "major": 11,
+      "minorMin": 0,
+      "minorMax": 0,
+      "components": []
+    },
     "vc14": {
       "major": 14,
       "minorMin": 0,

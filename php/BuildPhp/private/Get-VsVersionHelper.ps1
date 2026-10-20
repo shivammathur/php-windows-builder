@@ -19,6 +19,18 @@ function Get-VsVersionHelper {
     begin {
     }
     process {
+        # VS 2012/2015 use the legacy layout even when v140 was installed by VS 2022.
+        if ($VsVersion -in @('vc11', 'vc14')) {
+            $version = if ($VsVersion -eq 'vc11') { '11.0' } else { '14.0' }
+            $vcDirectory = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio $version\VC"
+            foreach ($file in @('vcvarsall.bat', 'bin\cl.exe', 'bin\amd64\cl.exe')) {
+                if (-not (Test-Path (Join-Path $vcDirectory $file))) {
+                    throw "$VsVersion toolset not available: $file"
+                }
+            }
+            return $version
+        }
+
         $installerDir = Join-Path "${env:ProgramFiles(x86)}\Microsoft Visual Studio" 'Installer'
         $vswherePath = Join-Path $installerDir 'vswhere.exe'
         if (-not (Test-Path $vswherePath)) {
