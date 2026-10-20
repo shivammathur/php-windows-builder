@@ -30,12 +30,29 @@ function Invoke-PhpSdkStarter {
         if ($VsConfig.vs -in @('vc11', 'vc14')) {
             $version = if ($VsConfig.vs -eq 'vc11') { '11.0' } else { '14.0' }
             $vcvars = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio $version\VC\vcvarsall.bat"
-            $targetArch = if ($Arch -eq 'x64') { 'amd64' } else { 'x86' }
+            # Express 2012 includes the x86-hosted x64 cross compiler.
+            $targetArch = if ($Arch -eq 'x64') { 'x86_amd64' } else { 'x86' }
             $launcher = Join-Path (Get-Location) 'legacy-sdk.bat'
             $commands = @(
                 '@echo off'
                 "call `"$vcvars`" $targetArch"
                 'if errorlevel 1 exit /b 1'
+            )
+            if ($VsConfig.vs -eq 'vc14') {
+                # VS 2015 expects unversioned SDK bin directories. Current
+                # Windows SDKs keep mc/mt/rc in a versioned bin directory.
+                $sdk = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10'
+                $sdkVersion = '10.0.19041.0'
+                if (-not (Test-Path "$sdk\bin\$sdkVersion\x86\mc.exe")) {
+                    throw "Windows SDK $sdkVersion tools are not installed"
+                }
+                $commands += @(
+                    "set PATH=$sdk\bin\$sdkVersion\x86;%PATH%"
+                    "set INCLUDE=$sdk\Include\$sdkVersion\ucrt;$sdk\Include\$sdkVersion\shared;$sdk\Include\$sdkVersion\um;$sdk\Include\$sdkVersion\winrt;%INCLUDE%"
+                    "set LIB=$sdk\Lib\$sdkVersion\ucrt\$Arch;$sdk\Lib\$sdkVersion\um\$Arch;%LIB%"
+                )
+            }
+            $commands += @(
                 "set PHP_SDK_VS=$($VsConfig.vs)"
                 "set PHP_SDK_ARCH=$Arch"
                 "call `"$BuildDirectory\php-sdk\bin\phpsdk_setvars.bat`""
@@ -46,7 +63,13 @@ function Invoke-PhpSdkStarter {
                 $commands += "set BISON_SIMPLE=$BuildDirectory\legacy-tools\bin\bison.simple"
                 $commands += "set BISON_PKGDATADIR=$BuildDirectory\legacy-tools\share\bison"
             }
-            $commands += @('cl 2>&1', "call `"$Task`"", 'exit /b %errorlevel%')
+            $commands += @(
+                'where cl link nmake mc mt rc bison re2c'
+                'if errorlevel 1 exit /b 1'
+                'cl 2>&1'
+                "call `"$Task`""
+                'exit /b %errorlevel%'
+            )
             Set-Content -Path $launcher -Value $commands -Encoding ascii
             & $env:ComSpec /d /c $launcher
             if ($LASTEXITCODE -ne 0) { throw "build failed with errorlevel $LASTEXITCODE" }

@@ -41,6 +41,12 @@ Build a specific version of PHP, with the required architecture and thread safet
     ts: nts
 ```
 
+#### Legacy PHP builds
+
+The `php` action can build PHP 5.6, 7.0 and 7.1 on `windows-2022` in both x86/x64 and NTS/TS configurations. PHP 5.6 uses Visual Studio 2012 Update 5 (VC11); PHP 7.0 and 7.1 use the Visual Studio 2015 (VC14) toolset. Missing compilers are installed automatically.
+
+PHP 5.6 and 7.0 use the final archived dependency bundles from December 2018. PHP 7.1 uses its VC14 dependency series. Legacy builds use standard optimization without PGO. Workflow dependency overrides (`libs-build-runs`) are not supported for the archived bundles.
+
 #### Inputs
 
 - `php-version` (required): The PHP version to build. It supports values in major.minor.patch format, e.g., 7.4.25, 8.0.12, etc., or `master` for the master branch of `php-src`.
