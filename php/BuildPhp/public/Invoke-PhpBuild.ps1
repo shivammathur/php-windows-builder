@@ -31,6 +31,10 @@ function Invoke-PhpBuild {
             $fetchSrc = $False
             $PhpVersion = Get-SourcePhpVersion
         }
+        $legacy = $PhpVersion -match '^(5\.6|7\.[01])(\.|$)'
+        if ($legacy -and $env:SBOM -eq 'true') {
+            throw 'SBOM generation is not supported for PHP 5.6-7.1 with the legacy PHP SDKs.'
+        }
         $VsConfig = (Get-VsVersion -PhpVersion $PhpVersion)
         if($null -eq $VsConfig.vs) {
             throw "PHP version $PhpVersion is not supported."
@@ -89,11 +93,13 @@ function Invoke-PhpBuild {
             $artifacts = if ($Ts -eq "ts") {"..\obj\Release_TS\php-*.zip"} else {"..\obj\Release\php-*.zip"}
             $binaryArtifacts = @(Get-ChildItem -Path $artifacts -File | Where-Object { $_.Name -notmatch '^php-(debug|devel|test)-pack-' })
             foreach($artifact in $binaryArtifacts) {
-                Add-PhpComplianceFiles -SdkDirectory (Join-Path $buildDirectory 'php-sdk') `
-                                       -SourceDirectory $buildPath `
-                                       -DepsDirectory $depsDirectory `
-                                       -Artifact $artifact.FullName `
-                                       -SbomMetadata $sbomMetadata
+                if (-not $legacy) {
+                    Add-PhpComplianceFiles -SdkDirectory (Join-Path $buildDirectory 'php-sdk') `
+                                           -SourceDirectory $buildPath `
+                                           -DepsDirectory $depsDirectory `
+                                           -Artifact $artifact.FullName `
+                                           -SbomMetadata $sbomMetadata
+                }
             }
 
             New-Item "$artifactsDirectory" -ItemType "directory" -Force > $null 2>&1

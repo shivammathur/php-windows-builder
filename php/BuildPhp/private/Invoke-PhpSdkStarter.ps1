@@ -59,9 +59,8 @@ function Invoke-PhpSdkStarter {
                 'if errorlevel 1 exit /b 1'
             )
             if ($VsConfig.vs -eq 'vc11') {
-                $commands += "set PATH=$BuildDirectory\legacy-tools\bin;%PATH%"
-                $commands += "set BISON_SIMPLE=$BuildDirectory\legacy-tools\bin\bison.simple"
-                $commands += "set BISON_PKGDATADIR=$BuildDirectory\legacy-tools\share\bison"
+                $commands += "set PATH=$BuildDirectory\php-sdk\bin;%PATH%"
+                $commands += "set BISON_PKGDATADIR=$BuildDirectory\php-sdk\share\bison"
             }
             $commands += @(
                 'where cl link nmake mc mt rc bison re2c'
