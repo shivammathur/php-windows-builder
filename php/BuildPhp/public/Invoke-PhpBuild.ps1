@@ -85,7 +85,8 @@ function Invoke-PhpBuild {
             $task = [System.IO.Path]::GetFileName($taskTemplate)
             Copy-Item -Path $taskTemplate -Destination $task -Force
             if ($VsConfig.vs -in @('vc11', 'vc14')) {
-                (Get-Content $task -Raw).Replace('@CONFIG@', "config.$Ts.bat") | Set-Content $task -Encoding ascii
+                $prepare = Join-Path $PSScriptRoot '..\runner\prepare-legacy.ps1'
+                (Get-Content $task -Raw).Replace('@CONFIG@', "config.$Ts.bat").Replace('@PREPARE@', $prepare) | Set-Content $task -Encoding ascii
             }
 
             Invoke-PhpSdkStarter -BuildDirectory $buildDirectory -VsConfig $VsConfig -Arch $Arch -Task $task
