@@ -47,6 +47,8 @@ The `php` action can build PHP 5.6, 7.0 and 7.1 on `windows-2022` in both x86/x6
 
 PHP 5.6 uses the legacy PHP SDK; PHP 7.0 and 7.1 use PHP SDK 2.1.10. PHP 5.6 and 7.0 use the final archived dependency bundles from December 2018. PHP 7.1 uses its VC14 dependency series. Legacy builds use standard optimization without PGO. SBOM generation is not available with these older SDKs, and workflow dependency overrides (`libs-build-runs`) are not supported for the archived bundles.
 
+The OCI8 and PDO_OCI extensions use the pinned Oracle Instant Client 19.32 SDK and need a compatible Oracle client at runtime. PHP 5.6 disables the obsolete ISAPI SAPI, matching the public release packages; TS builds retain the Apache 2.4 SAPI.
+
 #### Inputs
 
 - `php-version` (required): The PHP version to build. It supports values in major.minor.patch format, e.g., 7.4.25, 8.0.12, etc., or `master` for the master branch of `php-src`.

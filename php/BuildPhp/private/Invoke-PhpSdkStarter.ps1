@@ -55,6 +55,7 @@ function Invoke-PhpSdkStarter {
             $commands += @(
                 "set PHP_SDK_VS=$($VsConfig.vs)"
                 "set PHP_SDK_ARCH=$Arch"
+                "set PHP_SDK_OCI_DIR=$BuildDirectory\instantclient\sdk"
                 "call `"$BuildDirectory\php-sdk\bin\phpsdk_setvars.bat`""
                 'if errorlevel 1 exit /b 1'
             )
