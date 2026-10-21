@@ -37,6 +37,11 @@ function Add-VS {
                 $payload = Join-Path $media $package.Name
                 & 7z x "$media\VCExpress\$($package.Exe)" "-o$payload" -y | Out-Host
                 if ($LASTEXITCODE -ne 0) { throw "Extracting VC9 $($package.Name) failed" }
+                if ($package.Name -eq 'compiler') {
+                    # The MSI's uncompressed file resolves relative to its root,
+                    # whereas the self-extractor stores it in WCU.
+                    Copy-Item "$payload\WCU\vcredist_x86.exe" "$payload\vcredist_x86.exe"
+                }
                 $destination = Join-Path $media "$($package.Name)-extracted"
                 $arguments = @('/a', "`"$payload\$($package.Msi)`"", '/qn', "TARGETDIR=`"$destination`"", '/L*v', "`"$env:TEMP\vs2008-$($package.Name).log`"")
                 $result = Start-Process msiexec.exe -ArgumentList $arguments -Wait -PassThru
@@ -46,7 +51,9 @@ function Add-VS {
             $vc = (Get-ChildItem "$media\compiler-extracted" -Recurse -Filter vcvarsall.bat | Select-Object -First 1).Directory
             if (-not $vc) { throw 'VC9 compiler directory missing' }
             New-Item $vsRoot -ItemType Directory -Force | Out-Null
-            Copy-Item "$($vc.Parent.FullName)\*" $vsRoot -Recurse -Force
+            # The administrative image uses the source name Vc7 for VC.
+            Copy-Item $vc.FullName "$vsRoot\VC" -Recurse -Force
+            Copy-Item "$($vc.Parent.FullName)\Common7" "$vsRoot\Common7" -Recurse -Force
             $sdkRoot = Join-Path $vsRoot 'Windows SDK'
             foreach ($part in @(@{Root='sdk'; File='Windows.h'; Dir='Include'}, @{Root='sdk'; File='kernel32.lib'; Dir='Lib'}, @{Root='tools'; File='rc.exe'; Dir='Bin'})) {
                 $file = Get-ChildItem "$media\$($part.Root)-extracted" -Recurse -Filter $part.File | Select-Object -First 1
@@ -54,7 +61,9 @@ function Add-VS {
                 New-Item "$sdkRoot\$($part.Dir)" -ItemType Directory -Force | Out-Null
                 Copy-Item "$($file.Directory.FullName)\*" "$sdkRoot\$($part.Dir)" -Recurse -Force
             }
-            $result = Start-Process "$media\VCExpress\WCU\vcredist_x86.exe" -ArgumentList '/q', '/norestart' -Wait -PassThru
+            $redist = Join-Path $media 'vcredist_x86.exe'
+            Get-File -Url 'https://download.microsoft.com/download/5/d/8/5d8c65cb-c849-4025-8e95-c3966cafd8ae/vcredist_x86.exe' -OutFile $redist
+            $result = Start-Process $redist -ArgumentList '/q', '/norestart' -Wait -PassThru
             if ($result.ExitCode -notin @(0, 1638, 3010)) { throw "VC9 runtime installation failed: $($result.ExitCode)" }
             Remove-Item $iso -Force
             Remove-Item $media -Recurse -Force
