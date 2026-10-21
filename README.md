@@ -43,11 +43,19 @@ Build a specific version of PHP, with the required architecture and thread safet
 
 #### Legacy PHP builds
 
-The `php` action can build PHP 5.6, 7.0 and 7.1 on `windows-2022` in both x86/x64 and NTS/TS configurations. PHP 5.6 uses Visual Studio 2012 Update 5 (VC11); PHP 7.0 and 7.1 use the Visual Studio 2015 (VC14) toolset. Missing compilers are installed automatically.
+The `php` action supports legacy builds on `windows-2022`, with both NTS and TS configurations:
 
-PHP 5.6 uses the legacy PHP SDK; PHP 7.0 and 7.1 use PHP SDK 2.1.10. PHP 5.6 and 7.0 use the final archived dependency bundles from December 2018. PHP 7.1 uses its VC14 dependency series. Legacy builds use standard optimization without PGO. SBOM generation is not available with these older SDKs, and workflow dependency overrides (`libs-build-runs`) are not supported for the archived bundles.
+| PHP series | Compiler | Architectures |
+| --- | --- | --- |
+| 5.3, 5.4 | Visual C++ 2008 Express SP1 (VC9) | x86 |
+| 5.5, 5.6 | Visual Studio 2012 Update 5 (VC11) | x86, x64 |
+| 7.0, 7.1 | Visual Studio 2015 toolset (VC14) | x86, x64 |
 
-The OCI8 and PDO_OCI extensions use the pinned Oracle Instant Client 19.32 SDK and need a compatible Oracle client at runtime. PHP 5.6 disables the obsolete ISAPI SAPI, matching the public release packages; TS builds retain the Apache 2.4 SAPI.
+Missing compilers are installed automatically. VC9 uses the compiler and Windows SDK from Microsoft's offline SP1 media, plus the runner's Windows SDK message compiler. PHP 5.3/5.4 x64 is rejected because the archived public PHP packages and matching dependency bundles are x86 only.
+
+PHP 5 uses the pinned legacy PHP SDK; PHP 7.0/7.1 use PHP SDK 2.1.10. Dependencies come from the archived bundles: September 2014 for PHP 5.3, May 2015 for PHP 5.4, the PHP 5.5 VC11 bundles, and December 2018 for PHP 5.6/7.0. PHP 7.1 uses its VC14 dependency series. Legacy builds use standard optimization without PGO. SBOM generation is unavailable with these older SDKs, and workflow dependency overrides (`libs-build-runs`) are unsupported for the archived bundles.
+
+OCI8 and PDO_OCI use the pinned Oracle Instant Client 19.32 SDK and require a compatible Oracle client at runtime. PHP 5.3–5.5 build both historical OCI8 DLL names from that SDK; these do not reproduce the original Oracle 10g/11g client requirements. Load only one OCI8 variant at a time. PHP 5 disables ISAPI to match the public packages. PHP 5.3/5.4 TS builds include the Apache 2.2, Apache 2.2 filter, Apache 2.4 and NSAPI modules; PHP 5.5/5.6 TS builds include Apache 2.4.
 
 #### Inputs
 
