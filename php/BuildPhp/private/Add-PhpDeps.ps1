@@ -32,13 +32,19 @@ function Add-PhpDeps {
     }
 
     process {
-        if ($PhpVersion -match '^(5\.6|7\.0)(\.|$)') {
+        if ($PhpVersion -match '^(5\.[3-6]|7\.0)(\.|$)') {
             if ($env:LIBS_BUILD_RUNS) {
                 throw 'Workflow dependency overrides are not supported for legacy dependency bundles.'
             }
             $series = $Matches[1]
+            $date = switch ($series) {
+                '5.3' { '_2014-09' }
+                '5.4' { '_2015-05' }
+                '5.5' { '' }
+                default { '_2018-12' }
+            }
             $archive = Join-Path $env:TEMP "deps-$series-$VsVersion-$Arch.7z"
-            Get-File -Url "https://downloads.php.net/~windows/php-sdk/archives/deps-$series-$VsVersion-${Arch}_2018-12.7z" -OutFile $archive
+            Get-File -Url "https://downloads.php.net/~windows/php-sdk/archives/deps-$series-$VsVersion-${Arch}${date}.7z" -OutFile $archive
             $extract = Join-Path $env:TEMP ([guid]::NewGuid().ToString())
             try {
                 & 7z x $archive "-o$extract" -y | Out-Host

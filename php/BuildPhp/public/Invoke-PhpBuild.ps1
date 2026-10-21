@@ -31,9 +31,12 @@ function Invoke-PhpBuild {
             $fetchSrc = $False
             $PhpVersion = Get-SourcePhpVersion
         }
-        $legacy = $PhpVersion -match '^(5\.6|7\.[01])(\.|$)'
+        $legacy = $PhpVersion -match '^(5\.[3-6]|7\.[01])(\.|$)'
         if ($legacy -and $env:SBOM -eq 'true') {
-            throw 'SBOM generation is not supported for PHP 5.6-7.1 with the legacy PHP SDKs.'
+            throw 'SBOM generation is not supported for PHP 5.3-7.1 with the legacy PHP SDKs.'
+        }
+        if ($PhpVersion -match '^5\.[34](\.|$)' -and $Arch -ne 'x86') {
+            throw 'PHP 5.3/5.4 VC9 builds support x86 only, matching the public releases.'
         }
         $VsConfig = (Get-VsVersion -PhpVersion $PhpVersion)
         if($null -eq $VsConfig.vs) {
@@ -78,18 +81,18 @@ function Invoke-PhpBuild {
                                                     -PhpVersion $PhpVersion `
                                                     -BuildDirectory $buildDirectory
             $taskTemplate = Join-Path $PSScriptRoot "..\runner\task-$Ts.bat"
-            if ($VsConfig.vs -in @('vc11', 'vc14')) {
+            if ($VsConfig.vs -in @('vc9', 'vc11', 'vc14')) {
                 $taskTemplate = Join-Path $PSScriptRoot '..\runner\task-legacy.bat'
             }
 
             $task = [System.IO.Path]::GetFileName($taskTemplate)
             Copy-Item -Path $taskTemplate -Destination $task -Force
-            if ($VsConfig.vs -in @('vc11', 'vc14')) {
+            if ($VsConfig.vs -in @('vc9', 'vc11', 'vc14')) {
                 $prepare = Join-Path $PSScriptRoot '..\runner\prepare-legacy.ps1'
                 (Get-Content $task -Raw).Replace('@CONFIG@', "config.$Ts.bat").Replace('@PREPARE@', $prepare) | Set-Content $task -Encoding ascii
             }
 
-            Invoke-PhpSdkStarter -BuildDirectory $buildDirectory -VsConfig $VsConfig -Arch $Arch -Task $task
+            Invoke-PhpSdkStarter -BuildDirectory $buildDirectory -VsConfig $VsConfig -Arch $Arch -Task $task -PhpVersion $PhpVersion
 
             $artifacts = if ($Ts -eq "ts") {"..\obj\Release_TS\php-*.zip"} else {"..\obj\Release\php-*.zip"}
             $binaryArtifacts = @(Get-ChildItem -Path $artifacts -File | Where-Object { $_.Name -notmatch '^php-(debug|devel|test)-pack-' })

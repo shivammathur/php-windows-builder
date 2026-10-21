@@ -1,1 +1,1 @@
-cscript /nologo configure.js "--enable-snapshot-build" "--enable-debug-pack" "--enable-object-out-dir=../obj/" "--enable-com-dotnet=shared" "--without-analyzer" "--with-oci8-12c=%PHP_SDK_OCI_DIR%,shared" "--with-pdo-oci=%PHP_SDK_OCI_DIR%,shared" "--disable-isapi" %*
+cscript /nologo configure.js "--enable-snapshot-build" "--enable-debug-pack" "--enable-object-out-dir=../obj/" "--enable-com-dotnet=shared"  %PHP_SDK_OCI_FLAGS% "--with-pdo-oci=%PHP_SDK_OCI_DIR%,shared" "--disable-isapi" %*
