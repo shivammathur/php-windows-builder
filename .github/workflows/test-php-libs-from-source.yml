@@ -18,6 +18,12 @@ on:
         description: Add SBOM files to binary archives
         required: false
         default: 'true'
+      test-artifact-run:
+        description: 'Existing source-build run to test without rebuilding'
+        required: false
+      test-matrix:
+        description: 'Optional test matrix JSON for recovering selected test jobs'
+        required: false
 
 jobs:
   resolve-runner:
@@ -48,6 +54,7 @@ jobs:
           echo "source-sha=$(git -C php-src rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
   php:
+    if: inputs.test-artifact-run == ''
     needs: resolve-runner
     strategy:
       matrix:
@@ -85,6 +92,7 @@ jobs:
           PHP_BUILD_PROVIDER: "The PHP Group"
 
   artifacts:
+    if: inputs.test-artifact-run == ''
     runs-on: ubuntu-latest
     needs: php
     outputs:
@@ -98,13 +106,10 @@ jobs:
           delete-merged: true
 
   tests:
+    if: always() && needs.resolve-runner.result == 'success' && (needs.artifacts.result == 'success' || inputs.test-artifact-run != '')
     needs: [resolve-runner, artifacts]
     strategy:
-      matrix:
-        arch: [x64, x86]
-        ts: [nts, ts]
-        opcache: [opcache, nocache]
-        test-type: [php, ext]
+      matrix: ${{ fromJSON(inputs.test-matrix || '{"arch":["x64","x86"],"ts":["nts","ts"],"opcache":["opcache","nocache"],"test-type":["php","ext"]}') }}
     runs-on: ${{ needs.resolve-runner.outputs.runner }}
     steps:
       - name: Checkout
@@ -115,6 +120,8 @@ jobs:
         id: artifacts
         with:
           name: artifacts
+          run-id: ${{ inputs.test-artifact-run || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Get Cache Key
         id: cache-key
@@ -138,12 +145,13 @@ jobs:
 
       - name: Cache Deps
         id: cache-deps
-        uses: actions/cache@v5
+        uses: actions/cache/restore@v5
         with:
           path: ${{ steps.cache-key.outputs.cache-dir }}
           key: ${{ steps.cache-key.outputs.cache-key }}-${{ hashFiles('packages.txt') }}
 
       - name: Test PHP
+        id: test-php
         shell: pwsh
         continue-on-error: true
         env:
@@ -160,6 +168,13 @@ jobs:
                           -TestType ${{matrix.test-type}} `
                           -SourceRepository '${{ inputs.php-src-repository }}' `
                           -SourceRef '${{ needs.resolve-runner.outputs.source-sha }}'
+
+      - name: Save complete test dependencies
+        if: steps.test-php.outcome == 'success' && steps.cache-deps.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.cache-key.outputs.cache-dir }}
+          key: ${{ steps.cache-deps.outputs.cache-primary-key }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7

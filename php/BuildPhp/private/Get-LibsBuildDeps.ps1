@@ -58,18 +58,28 @@ function Get-LibsBuildDeps {
 
             Write-Host "Downloading artifact: $($artifact.name)"
             $libName = $artifact.name -replace '-\d.*$', ''
-            $downloadedLibs += $libName
 
             $tempZip = Join-Path $env:TEMP ([System.Guid]::NewGuid().ToString() + '.zip')
 
             try {
                 Write-Host "Downloading from: $($artifact.archive_download_url)"
-                Invoke-WebRequest -Uri $artifact.archive_download_url -Headers $headers -OutFile $tempZip
+                for ($attempt = 1; $attempt -le 5; $attempt++) {
+                    try {
+                        Invoke-WebRequest -Uri $artifact.archive_download_url -Headers $headers -OutFile $tempZip -ErrorAction Stop
+                        break
+                    } catch {
+                        Remove-Item -LiteralPath $tempZip -Force -ErrorAction SilentlyContinue
+                        if ($attempt -eq 5) { throw }
+                        Write-Warning "Artifact download attempt $attempt failed; retrying $($artifact.name)."
+                        Start-Sleep -Seconds ([int][Math]::Pow(2, $attempt))
+                    }
+                }
                 Write-Host "Downloaded to: $tempZip (Size: $((Get-Item $tempZip).Length) bytes)"
 
                 Write-Host "Extracting to: $Destination"
                 Expand-Archive -LiteralPath $tempZip -DestinationPath $Destination -Force
                 Write-Host "Extracted $($artifact.name) successfully"
+                $downloadedLibs += $libName
             }
             catch {
                 Write-Error "Failed to process artifact $($artifact.name): $_"
