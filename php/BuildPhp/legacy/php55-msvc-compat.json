@@ -1,0 +1,52 @@
+{
+  "patch": "php55-msvc-compat.patch",
+  "sha256": "5ef40d7da1ee07b5e8bc147b718de7b9716b610d453b5a2c39403545372b3b5a",
+  "reason": "C89/MSVC compatibility only: move declarations while retaining initializer/guard order; use existing Zend booleans and signed 64-bit Windows types; separate libxml save-state declarations; use MSVC inline spelling and the existing Windows hostname bound; remove the conflicting export annotation from the 5.3 file-local string helper. Security checks and test expectations are unchanged.",
+  "files": [
+    {
+      "path": "ext/dom/document.c",
+      "before_sha256": "83018211c02d28d2298db8b4526c05b44b5424cef78f8e901774be8863116529",
+      "after_sha256": "86f19bf16a0896b3de45db025713d20f72295027d8c98a683c277c9bfb9feb88"
+    },
+    {
+      "path": "ext/dom/documentfragment.c",
+      "before_sha256": "5a019f4481c98d82465a319b08ef3ca1c8aefcc6ef4e3afceed7746e6e4e9a16",
+      "after_sha256": "bc137e427d891199e0dee03fb53b80fcb81990ead9eccda87d6ce4e4406225ed"
+    },
+    {
+      "path": "ext/libxml/php_libxml.h",
+      "before_sha256": "ab0dc6a2dfd234489817ed303a9410dc4eacdcf059fc0989f2933c57543b6e1c",
+      "after_sha256": "55c24f032c0c00e903f4736fe23cdff4d0d3e8714a1112f027119d88e72738d9"
+    },
+    {
+      "path": "ext/mbstring/libmbfl/filters/mbfilter_big5.c",
+      "before_sha256": "da820582aafe463118f22d549075403c86caa3e7a0da3e0528952b0d73e59c63",
+      "after_sha256": "6cb6010ecec9488fc8e0cf5dc0d116f3a580a7d4ebf08e10936ba6fb63c89a8e"
+    },
+    {
+      "path": "ext/phar/dirstream.c",
+      "before_sha256": "42d673af88383aa1c639fd96d90eac31a40fcfa438e0826ce403aca25fdd1e70",
+      "after_sha256": "35a69f1854a7edea66e453a96b51f6888c417b41318358ebd1ebf92936d44e0a"
+    },
+    {
+      "path": "ext/simplexml/simplexml.c",
+      "before_sha256": "3b9aa59c724392452ec7a39696d704b1c43ca8f61be4b4969094196c8680ac81",
+      "after_sha256": "d9973e7ff806504ce3e9506ba305fd41fef8d4618a6fae855c6baea4cabe6a57"
+    },
+    {
+      "path": "ext/xmlreader/php_xmlreader.c",
+      "before_sha256": "35444372f6a6e06c9ad72e0fc4d6584804a56ff76956303e07bf2b97be9a5b7c",
+      "after_sha256": "eec36b3f13d63117d36bab551f52760df6756c83a289667c2ed6dfd29cad25b0"
+    },
+    {
+      "path": "ext/xsl/xsltprocessor.c",
+      "before_sha256": "63d7452d71b4c957defadd685359af4221cb552333cd60f1ef3528ee27dc0423",
+      "after_sha256": "7a10f9c2b7402eca30b62b7ee4a5cfd84a12f7c09bfc42681c1764cebe999628"
+    },
+    {
+      "path": "main/rfc1867.c",
+      "before_sha256": "df4d44633d111e490a7dfc39d93f0cad13fb1c752ec037ab277d13ae3fec0026",
+      "after_sha256": "4d334c4a929f2bcda843de283cf0ed1552e718ffec4a00e5828dab41897b3554"
+    }
+  ]
+}

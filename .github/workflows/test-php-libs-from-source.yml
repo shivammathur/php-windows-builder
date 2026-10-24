@@ -9,6 +9,11 @@ on:
       php-src-ref:
         description: 'Branch, tag, or SHA in the php-src repository to source builds and tests from'
         required: true
+      runner:
+        description: 'Windows runner override (auto selects the source-compatible hosted image)'
+        type: choice
+        options: [auto, windows-2022, windows-2022-sf]
+        default: auto
       libs-build-runs:
         description: 'Comma-separated list of GitHub Actions run IDs from winlibs/winlib-builder'
         required: false
@@ -25,6 +30,9 @@ jobs:
     outputs:
       runner: ${{ steps.resolve.outputs.runner }}
       source-sha: ${{ steps.resolve.outputs.source-sha }}
+      version: ${{ steps.resolve.outputs.version }}
+      legacy: ${{ steps.resolve.outputs.legacy }}
+      arches: ${{ steps.resolve.outputs.arches }}
     steps:
       - name: Checkout PHP source
         uses: actions/checkout@v6
@@ -40,18 +48,38 @@ jobs:
       - name: Resolve runner
         id: resolve
         shell: bash
+        env:
+          REQUESTED_RUNNER: ${{ inputs.runner }}
         run: |
           read -r major minor < <(awk '/^#define PHP_(MAJOR|MINOR)_VERSION/ { v[++i]=$3 } END { print v[1], v[2] }' php-src/main/php_version.h)
           runner="$([ "$major" -gt 8 ] || { [ "$major" -eq 8 ] && [ "$minor" -ge 6 ]; } && echo windows-2025-vs2026 || echo windows-2022)"
+          if [[ "$REQUESTED_RUNNER" != auto && -n "$REQUESTED_RUNNER" ]]; then
+            if [[ "$runner" == windows-2025-vs2026 ]]; then
+              echo 'The Windows 2022 override cannot build PHP 8.6 or newer' >&2
+              exit 1
+            fi
+            runner="$REQUESTED_RUNNER"
+          fi
+          version=$(awk '/^#define PHP_VERSION / {gsub(/"/, "", $3); print $3}' php-src/main/php_version.h)
+          legacy=false
+          if [[ "$major" -eq 5 || ( "$major" -eq 7 && "$minor" -le 1 ) ]]; then legacy=true; fi
+          arches='["x64","x86"]'
+          if [[ "$major" -eq 5 && "$minor" -le 4 ]]; then arches='["x86"]'; fi
           echo "PHP source version: $major.$minor; runner: $runner"
-          echo "runner=$runner" >> "$GITHUB_OUTPUT"
-          echo "source-sha=$(git -C php-src rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          {
+            echo "version=$version"
+            echo "legacy=$legacy"
+            echo "arches=$arches"
+            echo "runner=$runner"
+            echo "source-sha=$(git -C php-src rev-parse HEAD)"
+          } >> "$GITHUB_OUTPUT"
 
   php:
     needs: resolve-runner
     strategy:
+      fail-fast: false
       matrix:
-        arch: [x64, x86]
+        arch: ${{ fromJSON(needs.resolve-runner.outputs.arches) }}
         ts: [nts, ts]
     runs-on: ${{ needs.resolve-runner.outputs.runner }}
     steps:
@@ -73,13 +101,22 @@ jobs:
         with:
           path: builder
 
+      - name: Prepare source and preserve provenance
+        shell: pwsh
+        env:
+          SOURCE_REPOSITORY: ${{ inputs.php-src-repository }}
+          SOURCE_REF: ${{ inputs.php-src-ref }}
+        run: |
+          python builder/php/BuildPhp/legacy/prepare-source.py . --repository $env:SOURCE_REPOSITORY --ref $env:SOURCE_REF
+          if ($LASTEXITCODE -ne 0) { throw 'Source preparation failed' }
+
       - name: Build
         uses: ./builder/php
         with:
           arch: ${{ matrix.arch }}
           ts: ${{ matrix.ts }}
           libs-build-runs: ${{ inputs.libs-build-runs }}
-          sbom: ${{ inputs.sbom }}
+          sbom: ${{ needs.resolve-runner.outputs.legacy == 'true' && 'false' || inputs.sbom }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
         env:
           PHP_BUILD_PROVIDER: "The PHP Group"
@@ -96,12 +133,15 @@ jobs:
         with:
           name: artifacts
           delete-merged: true
+          pattern: artifacts-*
 
   tests:
+    if: needs.resolve-runner.outputs.legacy != 'true'
     needs: [resolve-runner, artifacts]
     strategy:
+      fail-fast: false
       matrix:
-        arch: [x64, x86]
+        arch: ${{ fromJSON(needs.resolve-runner.outputs.arches) }}
         ts: [nts, ts]
         opcache: [opcache, nocache]
         test-type: [php, ext]
@@ -169,9 +209,11 @@ jobs:
           path: test-${{matrix.arch}}-${{matrix.ts}}-${{matrix.opcache}}-${{matrix.test-type}}.xml
 
   smoke-tests:
+    if: needs.resolve-runner.outputs.legacy != 'true'
     strategy:
+      fail-fast: false
       matrix:
-        arch: [x64, x86]
+        arch: ${{ fromJSON(needs.resolve-runner.outputs.arches) }}
         ts: [nts, ts]
     runs-on: ${{ needs.resolve-runner.outputs.runner }}
     needs: [resolve-runner, artifacts]
@@ -192,3 +234,48 @@ jobs:
           Invoke-PhpSmokeTests -ArtifactsDirectory (Join-Path $(pwd).Path 'artifacts') `
                                -Arch ${{matrix.arch}} `
                                -Ts ${{matrix.ts}}
+
+  legacy-package-tests:
+    if: needs.resolve-runner.outputs.legacy == 'true'
+    needs: [resolve-runner, artifacts]
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: ${{ fromJSON(needs.resolve-runner.outputs.arches) }}
+        ts: [nts, ts]
+    runs-on: ${{ needs.resolve-runner.outputs.runner }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
+        with:
+          name: artifacts
+          path: artifacts
+      - uses: actions/checkout@v6
+        with:
+          repository: mlocati/powershell-phpmanager
+          ref: 8ff33df31c7345ca77b0eaea4c4395e30f3ef64c
+          path: phpmanager
+          persist-credentials: false
+      - name: Validate legacy packages on a clean runner
+        shell: pwsh
+        env:
+          PHP_VERSION: ${{ needs.resolve-runner.outputs.version }}
+          BUILD_ARCH: ${{ matrix.arch }}
+          BUILD_TS: ${{ matrix.ts }}
+          SOURCE_COMMIT: ${{ needs.resolve-runner.outputs.source-sha }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $proof = Get-Content artifacts/source-provenance.json -Raw | ConvertFrom-Json
+          if ($proof.commit -cne $env:SOURCE_COMMIT -or $proof.version -cne $env:PHP_VERSION) { throw 'Source provenance mismatch' }
+          $source = "artifacts/php-$env:PHP_VERSION-src.zip"
+          if ((Get-FileHash $source -Algorithm SHA256).Hash.ToLowerInvariant() -cne $proof.source_archive_sha256) { throw 'Source archive mismatch' }
+          . ./php/BuildPhp/legacy/install-test-xdebug.ps1
+          $suite = if ($env:PHP_VERSION -match '^5\.[3-5]\.') { 'early-tests' } else { 'tests' }
+          & "./php/BuildPhp/legacy/$suite/validate.ps1" -PhpVersion $env:PHP_VERSION -Arch $env:BUILD_ARCH -Ts $env:BUILD_TS
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: package-validation-${{ matrix.arch }}-${{ matrix.ts }}
+          path: evidence
+          if-no-files-found: error

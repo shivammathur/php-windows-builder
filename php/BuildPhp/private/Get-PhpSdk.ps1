@@ -16,6 +16,10 @@ function Get-PhpSdk {
         } elseif ($PhpVersion -match '^7\.[01](\.|$)') {
             $sdkVersion = 'php-sdk-2.1.10'
             $url = "https://github.com/php/php-sdk-binary-tools/archive/$sdkVersion.zip"
+        } elseif ($PhpVersion -match '^7\.2(\.|$)') {
+            # Keep PHP 7.2's mkdist.php on the compatible SDK packaging interpreter.
+            $sdkVersion = 'ef0f77253e50beee3e83195d42fb2b89e0c5147e'
+            $url = "https://github.com/shivammathur/php-sdk-binary-tools/archive/$sdkVersion.zip"
         }
     }
     process {

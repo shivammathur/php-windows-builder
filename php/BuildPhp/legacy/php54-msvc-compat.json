@@ -1,0 +1,57 @@
+{
+  "patch": "php54-msvc-compat.patch",
+  "sha256": "ea984fa9a3ba07a2b7a851e292920ba78db27edd44cbb664a2fca968eb439923",
+  "reason": "C89/MSVC compatibility only: move declarations while retaining initializer/guard order; use existing Zend booleans and signed 64-bit Windows types; separate libxml save-state declarations; use MSVC inline spelling and the existing Windows hostname bound; remove the conflicting export annotation from the 5.3 file-local string helper. Security checks and test expectations are unchanged.",
+  "files": [
+    {
+      "path": "ext/dom/document.c",
+      "before_sha256": "0ac00b2eda290bbd61d4a060ddf7edfe0781fec7e2e39dc93f1f67d5bd1c01fc",
+      "after_sha256": "a57ee4985fd200f06330e61375db3ae9d03e80202d2566259172d26a39187a6e"
+    },
+    {
+      "path": "ext/dom/documentfragment.c",
+      "before_sha256": "cda109a95274c0af26f86f1aa364ae05480f9394f09fc111e749bb9ce74a5780",
+      "after_sha256": "8cba5c0eaea9fb80145786d41774ed08807a8aad5630778cd3a962c6ca2d620b"
+    },
+    {
+      "path": "ext/libxml/php_libxml.h",
+      "before_sha256": "775b769f2db938dce41c1d5ce95577dc6ff558658fd63ab8a0c7c406aa8bfaf6",
+      "after_sha256": "1864398da262d7763f42280ae17bb7f4c3a1966f149edb0bcf25f0f00c7543c5"
+    },
+    {
+      "path": "ext/mbstring/libmbfl/filters/mbfilter_big5.c",
+      "before_sha256": "da820582aafe463118f22d549075403c86caa3e7a0da3e0528952b0d73e59c63",
+      "after_sha256": "6cb6010ecec9488fc8e0cf5dc0d116f3a580a7d4ebf08e10936ba6fb63c89a8e"
+    },
+    {
+      "path": "ext/mbstring/oniguruma/enc/utf16_le.c",
+      "before_sha256": "207c57536934c88c2dfc65076c365735b52f0cb952a67f6f736073e7f626e58f",
+      "after_sha256": "7b159418ad930be402edcc0fd77016181bc94c5b4b8f96d5d0eb1ae408c2ea6f"
+    },
+    {
+      "path": "ext/phar/dirstream.c",
+      "before_sha256": "4156202a4dde0eb9bddaefa2da6737c705221ab4f4a8e75fb5284b14b6861513",
+      "after_sha256": "cf6cb55c7d923b3356394cf0bc55a936ea72d27b0250ee13530519c51578464c"
+    },
+    {
+      "path": "ext/simplexml/simplexml.c",
+      "before_sha256": "71f9a6b90cbe7a39aab76fad26df584b17e8280018080f35d6bb1538303e95ae",
+      "after_sha256": "8658c3174549ce0cbcb3b722e557b9985826436ed86603448b204f846fc25716"
+    },
+    {
+      "path": "ext/xmlreader/php_xmlreader.c",
+      "before_sha256": "d0085d00dd922de27de9b99daf2b8c38a63b5b293b7867cdd08284264036fa18",
+      "after_sha256": "21f5b99de7c65f9f4fd90df53c33711d97ee74e46fc8598b9bf586ea47ac32a9"
+    },
+    {
+      "path": "ext/xsl/xsltprocessor.c",
+      "before_sha256": "f81688eb5e36cf3245cfc11253b9d1968b60d1e1bec6c0be23ed51c20c13c148",
+      "after_sha256": "26114028d83ef67f4643e949dd874e9c8bccc9e4f649469bacc5dff0ba46f6cc"
+    },
+    {
+      "path": "main/rfc1867.c",
+      "before_sha256": "ade0f5f9634862dee7242a60766a0e86a0c715cfe470ac59bcab1c1f84da8271",
+      "after_sha256": "42c3ebb2c5f73b7ba8a792ba68dd625aa435f93f3175bd9027e416d07d095dc7"
+    }
+  ]
+}

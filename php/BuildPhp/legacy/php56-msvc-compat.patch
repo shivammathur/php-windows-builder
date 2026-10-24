@@ -1,0 +1,145 @@
+--- a/ext/openssl/openssl.c
++++ b/ext/openssl/openssl.c
+@@ -58,6 +58,121 @@
+ #if PHP_OPENSSL_API_VERSION >= 0x30000
+ #include <openssl/core_names.h>
+ #include <openssl/param_build.h>
++#endif
++
++/* OpenSSL 1.0 accessors from the PHP 7.0 compatibility implementation. */
++#if defined(PHP_WIN32) && OPENSSL_VERSION_NUMBER < 0x10100000L
++#define EVP_PKEY_get0_RSA(_pkey) _pkey->pkey.rsa
++#define EVP_PKEY_get0_DH(_pkey) _pkey->pkey.dh
++#define EVP_PKEY_get0_DSA(_pkey) _pkey->pkey.dsa
++#define EVP_PKEY_get0_EC_KEY(_pkey) _pkey->pkey.ec
++
++static int RSA_set0_key(RSA *r, BIGNUM *n, BIGNUM *e, BIGNUM *d)
++{
++	r->n = n;
++	r->e = e;
++	r->d = d;
++
++	return 1;
++}
++
++static int RSA_set0_factors(RSA *r, BIGNUM *p, BIGNUM *q)
++{
++	r->p = p;
++	r->q = q;
++
++	return 1;
++}
++
++static int RSA_set0_crt_params(RSA *r, BIGNUM *dmp1, BIGNUM *dmq1, BIGNUM *iqmp)
++{
++	r->dmp1 = dmp1;
++	r->dmq1 = dmq1;
++	r->iqmp = iqmp;
++
++	return 1;
++}
++
++static void RSA_get0_key(const RSA *r, const BIGNUM **n, const BIGNUM **e, const BIGNUM **d)
++{
++	*n = r->n;
++	*e = r->e;
++	*d = r->d;
++}
++
++static void RSA_get0_factors(const RSA *r, const BIGNUM **p, const BIGNUM **q)
++{
++	*p = r->p;
++	*q = r->q;
++}
++
++static void RSA_get0_crt_params(const RSA *r, const BIGNUM **dmp1, const BIGNUM **dmq1, const BIGNUM **iqmp)
++{
++	*dmp1 = r->dmp1;
++	*dmq1 = r->dmq1;
++	*iqmp = r->iqmp;
++}
++
++static void DH_get0_pqg(const DH *dh, const BIGNUM **p, const BIGNUM **q, const BIGNUM **g)
++{
++	*p = dh->p;
++	*q = dh->q;
++	*g = dh->g;
++}
++
++static int DH_set0_pqg(DH *dh, BIGNUM *p, BIGNUM *q, BIGNUM *g)
++{
++	dh->p = p;
++	dh->q = q;
++	dh->g = g;
++
++	return 1;
++}
++
++static void DH_get0_key(const DH *dh, const BIGNUM **pub_key, const BIGNUM **priv_key)
++{
++	*pub_key = dh->pub_key;
++	*priv_key = dh->priv_key;
++}
++
++static int DH_set0_key(DH *dh, BIGNUM *pub_key, BIGNUM *priv_key)
++{
++	dh->pub_key = pub_key;
++	dh->priv_key = priv_key;
++
++	return 1;
++}
++
++static void DSA_get0_pqg(const DSA *d, const BIGNUM **p, const BIGNUM **q, const BIGNUM **g)
++{
++	*p = d->p;
++	*q = d->q;
++	*g = d->g;
++}
++
++int DSA_set0_pqg(DSA *d, BIGNUM *p, BIGNUM *q, BIGNUM *g)
++{
++	d->p = p;
++	d->q = q;
++	d->g = g;
++
++	return 1;
++}
++
++static void DSA_get0_key(const DSA *d, const BIGNUM **pub_key, const BIGNUM **priv_key)
++{
++	*pub_key = d->pub_key;
++	*priv_key = d->priv_key;
++}
++
++int DSA_set0_key(DSA *d, BIGNUM *pub_key, BIGNUM *priv_key)
++{
++	d->pub_key = pub_key;
++	d->priv_key = priv_key;
++
++	return 1;
++}
++
+ #endif
+ 
+ /* Common */
+--- a/ext/soap/php_encoding.c
++++ b/ext/soap/php_encoding.c
+@@ -3528,6 +3528,9 @@
+ 		} else {
+ 			smart_str prefix = {0};
+ 			int num = ++SOAP_GLOBAL(cur_uniq_ns);
++#if LIBXML_VERSION < 21300
++			xmlChar *enc_ns;
++#endif
+ 
+ 			while (1) {
+ 				smart_str_appendl(&prefix, "ns", 2);
+@@ -3545,7 +3548,7 @@
+ 			/* Starting with libxml 2.13, we don't have to do this workaround anymore, otherwise we get double-encoded
+ 			 * entities. See libxml2 commit f506ec66547ef9bac97a2bf306d368ecea8c0c9e. */
+ #if LIBXML_VERSION < 21300
+-			xmlChar *enc_ns = xmlEncodeSpecialChars(node->doc, BAD_CAST(ns));
++			enc_ns = xmlEncodeSpecialChars(node->doc, BAD_CAST(ns));
+ 			xmlns = xmlNewNs(node->doc->children, enc_ns, BAD_CAST(prefix.c));
+ 			xmlFree(enc_ns);
+ #else

@@ -54,7 +54,8 @@ function Invoke-PhpTests {
     }
     process {
         Set-NetSecurityProtocolType
-        $VsData = (Get-VsVersion -PhpVersion $PhpVersion)
+        $series = if ($PhpVersion -eq 'master') { 'master' } else { $PhpVersion.Split('.')[0..1] -join '.' }
+        $VsData = [PSCustomObject]@{ vs = (Get-Content (Join-Path $PSScriptRoot '..\config\vs.json') -Raw | ConvertFrom-Json).php.$series }
         if($null -eq $VsData.vs) {
             throw "PHP version $PhpVersion is not supported."
         }

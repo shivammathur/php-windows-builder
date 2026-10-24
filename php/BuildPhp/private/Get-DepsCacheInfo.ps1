@@ -47,7 +47,7 @@ function Get-DepsCacheInfo {
             $runsKey = 'default'
         }
 
-        $vsVersion = (Get-VsVersion -PhpVersion $PhpVersion).vs
+        $vsVersion = (Get-Content (Join-Path $PSScriptRoot '..\config\vs.json') -Raw | ConvertFrom-Json).php.$depsPhpVersion
         $packageData = Get-PhpDepsPackages -PhpVersion $PhpVersion -VsVersion $vsVersion -Arch $Arch
 
         $cacheKey = "deps-$depsPhpVersion-$vsVersion-$Arch"

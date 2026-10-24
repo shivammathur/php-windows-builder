@@ -1,0 +1,194 @@
+--- a/ext/dom/document.c
++++ b/ext/dom/document.c
+@@ -1908,6 +1908,7 @@
+    Substitutues xincludes in a DomDocument */
+ PHP_FUNCTION(dom_document_xinclude)
+ {
++	PHP_LIBXML_DECLARE_GLOBALS(xinclude);
+ 	zval *id;
+ 	xmlDoc *docp;
+ 	xmlNodePtr root;
+@@ -1951,6 +1952,7 @@
+ */
+ PHP_FUNCTION(dom_document_validate)
+ {
++	PHP_LIBXML_DECLARE_GLOBALS(validate);
+ 	zval *id;
+ 	xmlDoc *docp;
+ 	dom_object *intern;
+@@ -1984,6 +1986,8 @@
+ #if defined(LIBXML_SCHEMAS_ENABLED)
+ static void _dom_document_schema_validate(INTERNAL_FUNCTION_PARAMETERS, int type) /* {{{ */
+ {
++	PHP_LIBXML_DECLARE_GLOBALS(new_parser_ctxt);
++	PHP_LIBXML_DECLARE_GLOBALS(validate);
+ 	zval *id;
+ 	xmlDoc *docp;
+ 	dom_object *intern;
+@@ -2092,6 +2096,7 @@
+ 
+ static void _dom_document_relaxNG_validate(INTERNAL_FUNCTION_PARAMETERS, int type) /* {{{ */
+ {
++	PHP_LIBXML_DECLARE_GLOBALS(parse);
+ 	zval *id;
+ 	xmlDoc *docp;
+ 	dom_object *intern;
+--- a/ext/dom/documentfragment.c
++++ b/ext/dom/documentfragment.c
+@@ -140,6 +140,7 @@
+ 	}
+ 
+ 	if (data) {
++		PHP_LIBXML_DECLARE_GLOBALS(parse);
+ 		PHP_LIBXML_SANITIZE_GLOBALS(parse);
+ 		err = xmlParseBalancedChunkMemory(nodep->doc, NULL, NULL, 0, data, &lst);
+ 		PHP_LIBXML_RESTORE_GLOBALS(parse);
+--- a/ext/libxml/php_libxml.h
++++ b/ext/libxml/php_libxml.h
+@@ -115,15 +115,23 @@
+  * See libxml2 globals.c and parserInternals.c.
+  * The unique_name argument allows multiple sanitizes and restores within the
+  * same function, even nested is necessary. */
++#define PHP_LIBXML_DECLARE_GLOBALS(unique_name) \
++	int xml_old_loadsubset_##unique_name; \
++	int xml_old_validate_##unique_name; \
++	int xml_old_pedantic_##unique_name; \
++	int xml_old_substitute_##unique_name; \
++	int xml_old_linenrs_##unique_name; \
++	int xml_old_blanks_##unique_name
++
+ #define PHP_LIBXML_SANITIZE_GLOBALS(unique_name) \
+-	int xml_old_loadsubset_##unique_name = xmlLoadExtDtdDefaultValue; \
++	xml_old_loadsubset_##unique_name = xmlLoadExtDtdDefaultValue; \
+ 	xmlLoadExtDtdDefaultValue = 0; \
+-	int xml_old_validate_##unique_name = xmlDoValidityCheckingDefaultValue; \
++	xml_old_validate_##unique_name = xmlDoValidityCheckingDefaultValue; \
+ 	xmlDoValidityCheckingDefaultValue = 0; \
+-	int xml_old_pedantic_##unique_name = xmlPedanticParserDefault(0); \
+-	int xml_old_substitute_##unique_name = xmlSubstituteEntitiesDefault(0); \
+-	int xml_old_linenrs_##unique_name = xmlLineNumbersDefault(0); \
+-	int xml_old_blanks_##unique_name = xmlKeepBlanksDefault(1);
++	xml_old_pedantic_##unique_name = xmlPedanticParserDefault(0); \
++	xml_old_substitute_##unique_name = xmlSubstituteEntitiesDefault(0); \
++	xml_old_linenrs_##unique_name = xmlLineNumbersDefault(0); \
++	xml_old_blanks_##unique_name = xmlKeepBlanksDefault(1);
+ 
+ #define PHP_LIBXML_RESTORE_GLOBALS(unique_name) \
+ 	xmlLoadExtDtdDefaultValue = xml_old_loadsubset_##unique_name; \
+--- a/ext/mbstring/libmbfl/filters/mbfilter_big5.c
++++ b/ext/mbstring/libmbfl/filters/mbfilter_big5.c
+@@ -138,7 +138,12 @@
+ 	{0xf70f,0xf848,0xc740,0xc8fe},
+ };
+ 
+-static inline int is_in_cp950_pua(int c1, int c) {
++#ifdef _MSC_VER
++static __inline int is_in_cp950_pua
++#else
++static inline int is_in_cp950_pua
++#endif
++(int c1, int c) {
+ 	if ((c1 >= 0xfa && c1 <= 0xfe) || (c1 >= 0x8e && c1 <= 0xa0) ||
+ 			(c1 >= 0x81 && c1 <= 0x8d) || (c1 >= 0xc7 && c1 <= 0xc8)) {
+ 		return (c >=0x40 && c <= 0x7e) || (c >= 0xa1 && c <= 0xfe);
+--- a/ext/phar/dirstream.c
++++ b/ext/phar/dirstream.c
+@@ -92,6 +92,7 @@
+  */
+ static size_t phar_dir_read(php_stream *stream, char *buf, size_t count TSRMLS_DC) /* {{{ */
+ {
++	php_stream_dirent *dirent;
+ 	HashTable *data = (HashTable *)stream->abstract;
+ 	phar_zstr key;
+ 	char *str_key;
+@@ -112,7 +113,7 @@
+ 
+ 	PHAR_STR(key, str_key);
+ 	zend_hash_move_forward(data);
+-	php_stream_dirent *dirent = (php_stream_dirent *) buf;
++	dirent = (php_stream_dirent *) buf;
+ 
+ 	if (sizeof(dirent->d_name) <= keylen) {
+ 		PHAR_STR_FREE(str_key);
+--- a/ext/simplexml/simplexml.c
++++ b/ext/simplexml/simplexml.c
+@@ -2173,6 +2173,7 @@
+    Load a filename and return a simplexml_element object to allow for processing */
+ PHP_FUNCTION(simplexml_load_file)
+ {
++	PHP_LIBXML_DECLARE_GLOBALS(read_file);
+ 	php_sxe_object *sxe;
+ 	char           *filename;
+ 	int             filename_len;
+@@ -2213,6 +2214,7 @@
+    Load a string and return a simplexml_element object to allow for processing */
+ PHP_FUNCTION(simplexml_load_string)
+ {
++	PHP_LIBXML_DECLARE_GLOBALS(read_memory);
+ 	php_sxe_object *sxe;
+ 	char           *data;
+ 	int             data_len;
+@@ -2253,6 +2255,7 @@
+    SimpleXMLElement constructor */
+ SXE_METHOD(__construct)
+ {
++	PHP_LIBXML_DECLARE_GLOBALS(read_file_or_memory);
+ 	php_sxe_object *sxe = php_sxe_fetch_object(getThis() TSRMLS_CC);
+ 	char           *data, *ns = NULL;
+ 	int             data_len, ns_len = 0;
+--- a/ext/xmlreader/php_xmlreader.c
++++ b/ext/xmlreader/php_xmlreader.c
+@@ -279,6 +279,7 @@
+ 											xmlRelaxNGValidityErrorFunc error_func,
+ 											xmlRelaxNGValidityWarningFunc warn_func TSRMLS_DC)
+ {
++	PHP_LIBXML_DECLARE_GLOBALS(parse);
+ 	char *valid_file = NULL;
+ 	xmlRelaxNGParserCtxtPtr parser = NULL;
+ 	xmlRelaxNGPtr           sptr;
+@@ -894,6 +895,7 @@
+ 	valid_file = _xmlreader_get_valid_file_path(source, resolved_path, MAXPATHLEN  TSRMLS_CC);
+ 
+ 	if (valid_file) {
++		PHP_LIBXML_DECLARE_GLOBALS(reader_for_file);
+ 		PHP_LIBXML_SANITIZE_GLOBALS(reader_for_file);
+ 		reader = xmlReaderForFile(valid_file, encoding, options);
+ 		PHP_LIBXML_RESTORE_GLOBALS(reader_for_file);
+@@ -973,6 +975,7 @@
+ 
+ 	intern = (xmlreader_object *)zend_object_store_get_object(id TSRMLS_CC);
+ 	if (intern && intern->ptr) {
++		PHP_LIBXML_DECLARE_GLOBALS(schema);
+ 		PHP_LIBXML_SANITIZE_GLOBALS(schema);
+ 		retval = xmlTextReaderSchemaValidate(intern->ptr, source);
+ 		PHP_LIBXML_RESTORE_GLOBALS(schema);
+@@ -1081,6 +1084,7 @@
+ 	inputbfr = xmlParserInputBufferCreateMem(source, source_len, XML_CHAR_ENCODING_NONE);
+ 
+     if (inputbfr != NULL) {
++		PHP_LIBXML_DECLARE_GLOBALS(text_reader);
+ /* Get the URI of the current script so that we can set the base directory in libxml */
+ #if HAVE_GETCWD
+ 		directory = VCWD_GETCWD(resolved_path, MAXPATHLEN);
+--- a/ext/xsl/xsltprocessor.c
++++ b/ext/xsl/xsltprocessor.c
+@@ -400,6 +400,7 @@
+ */
+ PHP_FUNCTION(xsl_xsltprocessor_import_stylesheet)
+ {
++	PHP_LIBXML_DECLARE_GLOBALS(parse);
+ 	zval *id, *docp = NULL;
+ 	xmlDoc *doc = NULL, *newdoc = NULL;
+ 	xsltStylesheetPtr sheetp, oldsheetp;
+--- a/main/rfc1867.c
++++ b/main/rfc1867.c
+@@ -27,6 +27,9 @@
+ 
+ #include <stdio.h>
+ #include "php.h"
++#ifdef PHP_WIN32
++#include "win32/php_stdint.h"
++#endif
+ #include "php_open_temporary_file.h"
+ #include "zend_globals.h"
+ #include "php_globals.h"

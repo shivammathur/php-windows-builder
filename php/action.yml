@@ -42,6 +42,11 @@ runs:
         Invoke-PhpBuild -PhpVersion '${{ inputs.php-version }}' `
                         -Arch '${{ inputs.arch }}' `
                         -Ts '${{ inputs.ts }}'
+        if (Test-Path artifacts/source-provenance.json) {
+          $source = Get-Content artifacts/source-provenance.json -Raw | ConvertFrom-Json
+          # Preserve the branch's exact tests alongside the compiler-adjusted source.
+          Copy-Item "artifacts/php-$($source.version)-src.zip" "artifacts/php-test-pack-$($source.version).zip" -Force
+        }
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v7

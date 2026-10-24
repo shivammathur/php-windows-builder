@@ -1,0 +1,2 @@
+php/BuildPhp/legacy/*.patch text eol=lf -whitespace
+php/BuildPhp/legacy/*/*.patch text eol=lf -whitespace

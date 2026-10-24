@@ -438,3 +438,25 @@ It should produce the extension builds in a directory named `artifacts` in the c
 ## License
 
 The scripts and documentation in this project are released under the [MIT License](LICENSE)
+
+### Building public backports from a branch
+
+Use `test-php-libs-from-source.yml` with `php-src-repository` and
+`php-src-ref`. The workflow resolves the ref once and pins that commit across
+builds and tests. `runner=windows-2022-sf` selects registered Windows Server 2022
+runners; the default remains the appropriate GitHub-hosted image.
+
+PHP 5.3/5.4 use VC9 x86 NTS/TS, PHP 5.5/5.6 use VC11 x86/x64 NTS/TS,
+and PHP 7.0/7.1 use VC14 x86/x64 NTS/TS. These SDKs do not support SBOMs
+or PGO, so the workflow disables SBOM generation for those series and uses
+the legacy build path. It runs the previously validated clean-runner package,
+extension-parity and Xdebug checks for these versions. PHP 7.2 and newer retain
+the existing PHPT and smoke jobs. No publication is performed by this workflow.
+
+The compiler compatibility patches under `php/BuildPhp/legacy` are bound to
+before/after SHA256 hashes. They preserve the backported security operations
+and PHPT expectations. PHP 5.6's `PHP-5.6-security-backports-openssl11` branch
+needs its OpenSSL 1.0 accessor compatibility block when built against the
+archived VC11 dependency bundle; selecting that source branch does not replace
+the bundle's OpenSSL runtime with 1.1. The source archive and provenance JSON
+record the exact source commit and applied adjustments.

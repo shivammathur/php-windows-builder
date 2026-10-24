@@ -1,0 +1,17 @@
+{
+  "patch": "php56-msvc-compat.patch",
+  "sha256": "77031b622f6afb23508f969fe3fdf18e0f2326c5ef5685b1abcf9c503d996200",
+  "reason": "Restore the existing PHP 7.0 OpenSSL 1.0 accessors on Windows and move a SOAP declaration before statements for VC11. Security operations and expected output are unchanged.",
+  "files": [
+    {
+      "path": "ext/openssl/openssl.c",
+      "before_sha256": "3d9248893990c956e79cfc3d163643631c317d3e8defe53e10133502e46a6d44",
+      "after_sha256": "c79a547b0ab6ab19be1c7120ccad42a2e2cde6e5c08f65b497390250b00a61fe"
+    },
+    {
+      "path": "ext/soap/php_encoding.c",
+      "before_sha256": "53ba84b644d15db8c6479e47c6314c664a89059c60be3a4160d07f1202a34883",
+      "after_sha256": "327935c8a6e12779c63b252b15496ea04b615aa217beb9a2c37215ae75aa2903"
+    }
+  ]
+}
