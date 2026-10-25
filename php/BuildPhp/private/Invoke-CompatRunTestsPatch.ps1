@@ -52,8 +52,19 @@ function Invoke-CompatRunTestsPatch {
         $targetDirectory = Split-Path -Path $Path -Parent
         $targetFileName = Split-Path -Path $Path -Leaf
 
-        & $patchExecutable -N -s -d $targetDirectory -i $PatchPath
-        $exitCode = $LASTEXITCODE
+        $originalBytes = [IO.File]::ReadAllBytes($Path)
+        try {
+            & $patchExecutable -N -s -d $targetDirectory -i $PatchPath 2>&1 | ForEach-Object { Write-Host $_ }
+            $exitCode = $LASTEXITCODE
+        } catch {
+            [IO.File]::WriteAllBytes($Path, $originalBytes)
+            throw
+        }
+        if ($exitCode -ne 0) {
+            # A rejected hunk can leave earlier hunks applied. The fallback
+            # must use the complete original runner, not a partial patch.
+            [IO.File]::WriteAllBytes($Path, $originalBytes)
+        }
 
         $rejectFile = Join-Path $targetDirectory "$targetFileName.rej"
         $originalFile = Join-Path $targetDirectory "$targetFileName.orig"

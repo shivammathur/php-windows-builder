@@ -54,8 +54,10 @@ function Invoke-PhpTests {
     }
     process {
         Set-NetSecurityProtocolType
-        $VsData = (Get-VsVersion -PhpVersion $PhpVersion)
-        if($null -eq $VsData.vs) {
+        $vsConfig = Get-Content "$PSScriptRoot\..\config\vs.json" -Raw | ConvertFrom-Json
+        $series = if ($PhpVersion -eq 'master') { 'master' } else { ($PhpVersion -split '\.')[0..1] -join '.' }
+        $vsVersion = $vsConfig.php.$series
+        if($null -eq $vsVersion) {
             throw "PHP version $PhpVersion is not supported."
         }
 
@@ -81,19 +83,21 @@ function Invoke-PhpTests {
         $testSetup = Add-TestRequirements -PhpVersion $PhpVersion `
                                           -Arch $Arch `
                                           -Ts $Ts `
-                                          -VsVersion $VsData.vs `
+                                          -VsVersion $vsVersion `
                                           -TestsDirectory $testsDirectory `
                                           -ArtifactsDirectory $currentDirectory `
                                           -SourceRepository $SourceRepository `
                                           -SourceRef $SourceRef
         Remove-Item Env:LIBS_BUILD_RUNS -ErrorAction SilentlyContinue
 
-        Set-PhpIniForTests -BuildDirectory $buildDirectory -Arch $Arch -Opcache $Opcache -TestType $TestType
+        Set-PhpIniForTests -BuildDirectory $buildDirectory -Arch $Arch -Opcache $Opcache -TestType $TestType -PhpVersion $PhpVersion
 
         $Env:Path = "$buildDirectory\phpbin;$Env:Path"
         $Env:TEST_PHP_EXECUTABLE = "$buildDirectory\phpbin\php.exe"
+        $Env:TEST_PHP_CGI_EXECUTABLE = "$buildDirectory\phpbin\php-cgi.exe"
         $Env:TEST_PHPDBG_EXECUTABLE = "$buildDirectory\phpbin\phpdbg.exe"
-        $Env:TEST_PHP_JUNIT = "$buildDirectory\test-$Arch-$Ts-$opcache-$TestType.xml"
+        $resultsDirectory = if ($env:QA_RESULT_DIRECTORY) { $env:QA_RESULT_DIRECTORY } else { $buildDirectory }
+        $Env:TEST_PHP_JUNIT = "$resultsDirectory\test-$Arch-$Ts-$opcache-$TestType.xml"
         $Env:SKIP_IO_CAPTURE_TESTS = 1
         $Env:NO_INTERACTION = 1
         $Env:REPORT_EXIT_STATUS = 1
@@ -115,8 +119,8 @@ function Invoke-PhpTests {
 
         $testTimeout = if ($TestType -eq 'ext') { '300' } else { '120' }
 
-        $testResultFile = "$buildDirectory\test-$Arch-$Ts-$Opcache-$TestType.xml"
-        $testLogFile = "$buildDirectory\test-$Arch-$Ts-$Opcache-$TestType.log"
+        $testResultFile = $Env:TEST_PHP_JUNIT
+        $testLogFile = "$resultsDirectory\test-$Arch-$Ts-$Opcache-$TestType.log"
 
         $params = @(
             "-n",
@@ -126,7 +130,6 @@ function Invoke-PhpTests {
             "-p", "$buildDirectory\phpbin\php.exe",
             "-n",
             "-c", "$buildDirectory\phpbin\php-test.ini",
-            $settings.progress,
             "-g", "FAIL,BORK,WARN,LEAK",
             "-q",
             "--offline",
@@ -137,6 +140,9 @@ function Invoke-PhpTests {
             "--temp-target", $tempDirectory,
             "-r", "$TestType-tests-to-run.txt"
         )
+
+        # Empty native arguments select the whole source tree in run-tests.php.
+        if ($settings.progress) { $params += $settings.progress }
 
         $compatPatchApplied = $true
         if ($null -ne $testSetup) {

@@ -56,6 +56,12 @@ function Set-FirebirdTestEnvironment {
             Set-Content -Path pdo_firebird_db_created -Value "db_created" -Encoding ASCII
         }
 
+        # Some PHPTs deliberately replace PATH. Keep the test client beside PHP
+        # so loading PDO_Firebird does not depend on the server's PATH entry.
+        $client = Join-Path (Split-Path $env:TEST_PHP_EXECUTABLE) 'fbclient.dll'
+        if (-not (Test-Path -LiteralPath $client)) {
+            Copy-Item -LiteralPath (Join-Path $destDir 'fbclient.dll') -Destination $client
+        }
         Add-Path $destDir
     }
 }

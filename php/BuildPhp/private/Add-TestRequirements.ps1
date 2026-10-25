@@ -48,6 +48,11 @@ function Add-TestRequirements {
     begin {
     }
     process {
+        # Legacy PHPT INI substitution does not quote short Windows paths with ~.
+        $temporaryDirectory = Join-Path (Get-Location) 'tmp'
+        New-Item $temporaryDirectory -ItemType Directory -Force | Out-Null
+        $env:TEMP = $temporaryDirectory
+        $env:TMP = $temporaryDirectory
         Add-Type -Assembly "System.IO.Compression.Filesystem"
         $versionInUrl = $PhpVersion
         if($PhpVersion -eq 'master') {
@@ -63,6 +68,7 @@ function Add-TestRequirements {
 
         $testZipFilePath = Join-Path $ArtifactsDirectory $testZipFile
         $testsDirectoryPath = Join-Path $currentDirectory $TestsDirectory
+        New-Item (Join-Path ([IO.Path]::GetPathRoot($testsDirectoryPath)) 'tmp') -ItemType Directory -Force | Out-Null
         $useCustomSource = -not [string]::IsNullOrWhiteSpace($SourceRef)
 
         if(-not(Test-Path $binZipFilePath)) {
@@ -141,6 +147,16 @@ function Add-TestRequirements {
         $null = Invoke-EditBin -Exe "$binDirectoryPath\php.exe" -StackSize 8388608 -Arch $Arch
         $null = Invoke-EditBin -Exe "$binDirectoryPath\php-cgi.exe" -StackSize 8388608 -Arch $Arch
         $null = Add-Path "$env:DEPS_DIR\bin"
+        # This preparation targets the PHP 7.2+ runners used by the private QA.
+        # Keep older runner layouts and PHP syntax compatibility unchanged.
+        if ($compatVersion -eq 'master' -or
+            ($compatVersion -match '^(\d+\.\d+)' -and [version]$Matches[1] -ge [version]'7.2')) {
+            & "$binDirectoryPath\php.exe" -n -d "extension_dir=$binDirectoryPath\ext" -d extension=php_openssl.dll `
+                "$PSScriptRoot\..\config\prepare-tests.php" $testsDirectoryPath
+            if ($LASTEXITCODE -ne 0) {
+                throw 'Could not prepare the PHPT runner and fixtures.'
+            }
+        }
         return [PSCustomObject]@{
             CompatPatchApplied = $compatPatchApplied
         }

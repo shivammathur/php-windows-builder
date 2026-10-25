@@ -1,4 +1,3 @@
-Sapi\cgi\tests
-Sapi\cli\tests
 tests
 Zend\tests
+sapi

@@ -25,6 +25,14 @@ function Set-SnmpTestEnvironment {
 
         $forwardTestsRoot = ($TestsDirectoryPath -replace '\\','/')
         $bigTestJs = "$forwardTestsRoot/ext/snmp/tests/bigtest.js"
+        if (-not (Test-Path -LiteralPath $bigTestJs)) {
+            # Windows equivalent of the older test pack's bigtest shell script.
+            @'
+for (var i = 0; i < 32; i++) {
+    WScript.StdOut.Write("\x03\x02\x04\x09\x12\x0B\x0C\x0D\x0E\x0F\x10\x11\x12\x13\x14\x15\x16\x17");
+}
+'@ | Set-Content -LiteralPath $bigTestJs -Encoding ASCII
+        }
 
         $content = Get-Content -LiteralPath $confPath -Raw -Encoding UTF8
         $newLine = "exec HexTest cscript.exe /nologo $bigTestJs"
@@ -41,17 +49,25 @@ function Set-SnmpTestEnvironment {
 
         $snmpd = Join-Path $env:DEPS_DIR 'bin\snmpd.exe'
         if (-not (Test-Path -LiteralPath $snmpd)) {
-            # We have net-snmp builds without snmpd.exe
-            Get-File -Url 'https://downloads.php.net/~windows/php-sdk/deps/vs16/x64/net-snmp-5.7.3-3-vs16-x64.zip' -OutFile "net-snmp-5.7.3-3-vs16-x64.zip"
-            Expand-Archive -Path "net-snmp-5.7.3-3-vs16-x64.zip" -DestinationPath $env:DEPS_DIR -Force
+            # The daemon is a separate process. Never overwrite the tested
+            # package's x86/version-specific dependency DLLs with x64 files.
+            $daemonDirectory = Join-Path $env:SystemDrive 'php-test-snmpd'
+            New-Item -ItemType Directory -Path $daemonDirectory -Force | Out-Null
+            $archive = Join-Path $daemonDirectory 'snmpd.zip'
+            Get-File -Url 'https://downloads.php.net/~windows/php-sdk/deps/vs16/x64/net-snmp-5.7.3-3-vs16-x64.zip' -OutFile $archive
+            Expand-Archive -Path $archive -DestinationPath $daemonDirectory -Force
+            $snmpd = Join-Path $daemonDirectory 'bin\snmpd.exe'
+            $env:MIBDIRS = Join-Path $daemonDirectory 'share\mibs'
             if (-not (Test-Path -LiteralPath $snmpd)) {
                 throw "snmpd.exe not found at $snmpd"
             }
         }
         if(-not(Test-Path snmpd_running)) {
-            Start-Process -FilePath $snmpd -ArgumentList @('-C','-c', $confPath, '-Ln') -WindowStyle Hidden
-            Set-Content -Path snmpd_running -Value "running" -Encoding ASCII
+            $daemon = Start-Process -FilePath $snmpd -ArgumentList @('-C','-c', "`"$confPath`"", '-Ln') -WindowStyle Hidden -PassThru
             Start-Sleep -Seconds 2
+            if ($daemon.HasExited) { throw "SNMP test daemon exited with code $($daemon.ExitCode)." }
+            Set-Content -Path snmpd_running -Value "running" -Encoding ASCII
         }
+        $env:SNMP_MIBDIR = $env:MIBDIRS
     }
 }
