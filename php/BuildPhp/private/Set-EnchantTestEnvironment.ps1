@@ -10,15 +10,20 @@ function Set-EnchantTestEnvironment {
         $libDir  = Join-Path $driveRoot 'usr\local\lib\enchant-2'
         $dictDir = Join-Path $driveRoot 'usr\local\share\enchant\hunspell'
 
-        New-Item -ItemType Directory -Force -Path $libDir  | Out-Null
-        New-Item -ItemType Directory -Force -Path $dictDir | Out-Null
-
         $depsDir = $env:DEPS_DIR
         if (-not $depsDir) { throw 'DEPS_DIR is not set.' }
         $srcDll = Join-Path $depsDir 'bin\libenchant2_hunspell.dll'
         if (-not (Test-Path -LiteralPath $srcDll)) {
-            throw "libenchant2_hunspell.dll not found at $srcDll"
+            $srcDll = Join-Path $depsDir 'bin\libenchant_myspell.dll'
+            $phpDir = Split-Path $env:TEST_PHP_EXECUTABLE
+            $libDir = Join-Path $phpDir 'lib\enchant'
+            $dictDir = Join-Path $phpDir 'share\enchant\myspell'
         }
+        if (-not (Test-Path -LiteralPath $srcDll)) {
+            throw "Enchant dictionary provider not found at $srcDll"
+        }
+        New-Item -ItemType Directory -Force -Path $libDir  | Out-Null
+        New-Item -ItemType Directory -Force -Path $dictDir | Out-Null
         Copy-Item -LiteralPath $srcDll -Destination $libDir -Force
 
         Write-Host 'Fetching enchant dicts'

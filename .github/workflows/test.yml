@@ -1,38 +1,66 @@
 name: Test PHP
-run-name: Test PHP ${{ inputs.php-version }}
+run-name: Test PHP ${{ inputs.php-version }}${{ inputs.php-build-run-id && format(' from build {0} ({1})', inputs.php-build-run-id, inputs.test-type) || '' }}
 on:
   workflow_dispatch:
     inputs:
       php-version:
         description: 'PHP version to test'
         required: true
+      php-build-run-id:
+        description: 'Optional existing public backports build run; no PHP build is performed'
+        required: false
+      artifact-sha256:
+        description: 'Required SHA256 of the aggregate when reusing a build run'
+        required: false
+      source-commit:
+        description: 'Required public backports source commit when reusing a build run'
+        required: false
+      test-type:
+        description: 'Configured suite to run'
+        type: choice
+        options: [all, php, ext]
+        default: all
+
+permissions:
+  contents: read
+  actions: read
 
 jobs:
   php:
     strategy:
+      fail-fast: false
       matrix:
         arch: [x64, x86]
         ts: [nts, ts]
         opcache: [opcache, nocache]
-        test-type: [php, ext]
+        test-type: ${{ fromJSON(inputs.test-type == 'php' && '["php"]' || inputs.test-type == 'ext' && '["ext"]' || '["php","ext"]') }}
     runs-on: ${{ (contains(inputs.php-version, 'master') || contains(inputs.php-version, '8.6') || contains(inputs.php-version, '8.7')) && 'windows-2025-vs2026' || 'windows-2022' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Verify and download existing build
+        if: inputs.php-build-run-id != ''
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_RUN_ID: ${{ inputs.php-build-run-id }}
+          ARTIFACT_SHA256: ${{ inputs.artifact-sha256 }}
+          SOURCE_COMMIT: ${{ inputs.source-commit }}
+          PHP_VERSION: ${{ inputs.php-version }}
+          BUILD_ARCH: ${{ matrix.arch }}
+          BUILD_TS: ${{ matrix.ts }}
+        run: python .github/scripts/fetch-test-artifacts.py
+
       - name: Get Cache Key
         id: cache-key
         shell: pwsh
         run: |
-          $pv = '${{inputs.php-version}}'
-          if('${{inputs.php-version}}' -ne 'master') {
-            $pv = '${{inputs.php-version}}'.Split('.')[0..1] -join '.'
-          }
-          $vsVersion = (Get-Content -Raw -Path (Join-Path $(pwd).Path '\php\BuildPhp\config\vs.json') | ConvertFrom-Json).php.$pv
-          $packagesListUrl = "https://downloads.php.net/~windows/php-sdk/deps/series/packages-$pv-$vsVersion-${{ matrix.arch }}-staging.txt"
-          Invoke-WebRequest -OutFile packages.txt -Uri $packagesListUrl
-          Add-Content -Value "cache-key=deps-$pv-$vsVersion-${{ matrix.arch }}" -Path $env:GITHUB_OUTPUT
-          Add-Content -Value "cache-dir=C:\deps-$pv-${{ matrix.arch }}" -Path $env:GITHUB_OUTPUT
+          Import-Module (Join-Path $(pwd).Path '\php\BuildPhp') -Force
+          $cacheInfo = Get-DepsCacheInfo -PhpVersion '${{ inputs.php-version }}' -Arch '${{ matrix.arch }}' -IncludeDefaultRunsKey
+          Set-Content -Path packages.txt -Value ($cacheInfo.Packages -join "`n")
+          Add-Content -Value "cache-key=$($cacheInfo.CacheKey)" -Path $env:GITHUB_OUTPUT
+          Add-Content -Value "cache-dir=$($cacheInfo.CacheDir)" -Path $env:GITHUB_OUTPUT
 
       - name: Cache Deps
         id: cache-deps
@@ -43,20 +71,26 @@ jobs:
 
       - name: Run Tests
         shell: pwsh
-        continue-on-error: true
         env:
           DEPS_DIR: ${{ steps.cache-key.outputs.cache-dir }}
           DEPS_CACHE_HIT: ${{ steps.cache-deps.outputs.cache-hit }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           Import-Module (Join-Path $(pwd).Path '\php\BuildPhp') -Force
           Invoke-PhpTests -PhpVersion ${{inputs.php-version}} `
                           -Arch ${{matrix.arch}} `
                           -Ts ${{matrix.ts}} `
                           -Opcache ${{matrix.opcache}} `
-                          -TestType ${{matrix.test-type}}
+                          -TestType ${{matrix.test-type}} `
+                          -FailOnError
 
       - name: Upload artifacts
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: test-results-${{matrix.arch}}-${{matrix.ts}}-${{matrix.opcache}}-${{matrix.test-type}}
-          path: test-${{matrix.arch}}-${{matrix.ts}}-${{matrix.opcache}}-${{matrix.test-type}}.xml
+          path: |
+            test-${{matrix.arch}}-${{matrix.ts}}-${{matrix.opcache}}-${{matrix.test-type}}.xml
+            test-${{matrix.arch}}-${{matrix.ts}}-${{matrix.opcache}}-${{matrix.test-type}}.log
+            test-input-provenance.json
+          if-no-files-found: error
