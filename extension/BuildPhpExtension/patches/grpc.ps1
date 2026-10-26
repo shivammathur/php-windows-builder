@@ -21,3 +21,14 @@ if (Test-Path $wrapperPath) {
     $wrapperContent = $wrapperContent.Replace("  _res; \`n})", "  } while (0)")
     Set-Content $wrapperPath $wrapperContent
 }
+
+# Retain the VS2019 14.29 toolset used by PHP 8.0-8.3 for bundled Abseil.
+$abseilPolicyPath = 'third_party\abseil-cpp\absl\base\policy_checks.h'
+if (Test-Path $abseilPolicyPath) {
+    $abseilPolicy = Get-Content $abseilPolicyPath -Raw
+    if ($abseilPolicy.Contains('_MSC_VER < 1930')) {
+        $abseilPolicy = $abseilPolicy.Replace('_MSC_VER < 1930', '_MSC_VER < 1929')
+        $abseilPolicy = $abseilPolicy.Replace('Visual Studio 2022 (MSVC++ 17.0)', 'Visual Studio 2019 (MSVC 19.29)')
+        Set-Content $abseilPolicyPath $abseilPolicy -NoNewline
+    }
+}
