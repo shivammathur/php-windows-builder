@@ -24,12 +24,16 @@ Function Add-PhpDependencies {
             try {
                 $matchesFound = $phpSeries.Content | Select-String -Pattern "(^|\n)$library.*"
                 if ($matchesFound.Count -eq 0) {
-                    foreach ($file in $phpTrunk.Links.Href) {
-                        if ($file -match "^$library") {
-                            $matchesFound = $file | Select-String -Pattern '.*'
-                            break
-                        }
-                    }
+                    $libraryPattern = '^' + [regex]::Escape($library) + '-\d.*-(?:' + $Config.vs_version + '|nocrt)-' + $Config.arch + '\.zip$'
+                    $matchesFound = $phpTrunk.Links.Href |
+                        Where-Object { $_ -match $libraryPattern } |
+                        Sort-Object -Property {
+                            $version = $_ -replace '^.*?-(?=\d)', '' -replace '-(?:vc\d+|vs\d+|nocrt)-[^-]+\.zip$', ''
+                            # Compare numeric version and rebuild components without losing letter or patch suffixes.
+                            [regex]::Replace($version, '\d+', { param($number) $number.Value.PadLeft(20, '0') })
+                        } -Descending |
+                        Select-Object -First 1 |
+                        Select-String -Pattern '.*'
                 }
                 if ($matchesFound.Count -eq 0) {
                     throw "Failed to find $library"
