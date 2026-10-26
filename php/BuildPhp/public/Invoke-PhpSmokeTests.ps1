@@ -146,6 +146,11 @@ function Invoke-PhpSmokeTests {
             if(-not $?) {
                 throw "SQLite 3.54.1 feature checks failed for $($zip.Name)"
             }
+
+            & .\php.exe -c $iniPath (Join-Path $PSScriptRoot '..\tests\openldap-2.7.2.php')
+            if(-not $?) {
+                throw "OpenLDAP 2.7.2 checks failed for $($zip.Name)"
+            }
         } finally {
             Pop-Location
         }
