@@ -39,6 +39,9 @@ on:
       libs-build-runs:
         description: 'Comma-separated winlibs/winlib-builder run IDs used by the PHP build artifacts'
         required: false
+      workers:
+        description: 'Optional number of PHPT workers'
+        required: false
       source-repository:
         description: 'php-src repository to source tests from when source-ref is provided'
         required: true
@@ -136,11 +139,26 @@ jobs:
       - name: Run tests
         shell: pwsh
         env:
+          PHPT_WORKERS: ${{ inputs.workers }}
           DEPS_DIR: ${{ steps.cache-key.outputs.cache-dir }}
           DEPS_CACHE_HIT: ${{ steps.cache-deps.outputs.cache-hit }}
           LIBS_BUILD_RUNS: ${{ inputs.libs-build-runs }}
           GITHUB_TOKEN: ${{ github.token }}
         run: |
+          if (-not [string]::IsNullOrWhiteSpace($env:PHPT_WORKERS)) {
+            $workers = [int]$env:PHPT_WORKERS
+            if ($workers -lt 1 -or $workers -gt 64) {
+              throw 'Workers must be between 1 and 64.'
+            }
+            $configPath = Join-Path $(pwd).Path 'php/BuildPhp/config/tests.config.json'
+            $config = Get-Content $configPath -Raw | ConvertFrom-Json
+            foreach ($property in $config.PSObject.Properties) {
+              if ($property.Value.workers -ne '') {
+                $property.Value.workers = "-j$workers"
+              }
+            }
+            $config | ConvertTo-Json -Depth 4 | Set-Content $configPath
+          }
           Import-Module (Join-Path $(pwd).Path '\php\BuildPhp') -Force
           Invoke-PhpTests -PhpVersion '${{ inputs.php-version }}' `
                           -Arch '${{ inputs.arch }}' `
