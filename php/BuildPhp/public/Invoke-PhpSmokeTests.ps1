@@ -141,6 +141,11 @@ function Invoke-PhpSmokeTests {
             if(-not $?) {
                 throw "php -i failed for $($zip.Name)"
             }
+
+            & .\php.exe -c $iniPath (Join-Path $PSScriptRoot '..\tests\sqlite-3.54.1.php')
+            if(-not $?) {
+                throw "SQLite 3.54.1 feature checks failed for $($zip.Name)"
+            }
         } finally {
             Pop-Location
         }
