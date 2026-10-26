@@ -1,0 +1,46 @@
+name: Validate SDK Bison
+run-name: Validate SDK Bison 3.8.2
+
+on:
+  push:
+    branches: [feature/bison-3.8.2-validation]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  php:
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.2.35', '8.3.36', '8.4.27', '8.5.12']
+        arch: [x64, x86]
+        ts: [nts, ts]
+    runs-on: windows-2022
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build PHP and verify SDK Bison compatibility
+        shell: pwsh
+        env:
+          SBOM: 'false'
+          PHP_BUILD_PROVIDER: SDK validation
+        run: ./.github/bison-validation/build.ps1 -Version '${{ matrix.php }}' -Arch '${{ matrix.arch }}' -Ts '${{ matrix.ts }}'
+      - name: Save validation evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: evidence-${{ matrix.php }}-${{ matrix.arch }}-${{ matrix.ts }}
+          path: bison-evidence
+          if-no-files-found: warn
+      - name: Save PHP runtime and devel pack
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: php-${{ matrix.php }}-${{ matrix.arch }}-${{ matrix.ts }}
+          path: |
+            artifacts/php-8*.zip
+            artifacts/php-devel-pack-*.zip
+            !artifacts/*-src.zip
+          if-no-files-found: warn

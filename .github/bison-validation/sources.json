@@ -1,0 +1,102 @@
+[
+  {
+    "version": "8.2.35",
+    "devel_pack": {
+      "url": "https://downloads.php.net/~windows/releases/archives/php-devel-pack-8.2.35-Win32-vs16-x64.zip",
+      "sha256": "34398ff79ab081247d217c44238a6570f968dbf558d711ed7b731836678b43e9"
+    },
+    "grammars": [
+      {
+        "path": "Zend/zend_language_parser.y",
+        "sha256": "1e49efd6d4751978d9c5063e5e110f0e3d101e766a1ac3c549204526d363286f"
+      },
+      {
+        "path": "Zend/zend_ini_parser.y",
+        "sha256": "31e649a6c9eb8a8d01489a08739813331b7d12e00bf56b1b64d62404106eecd3"
+      },
+      {
+        "path": "ext/json/json_parser.y",
+        "sha256": "c47db8c02e3a3e0d9383fc40aeecc08d5afff76e1569e1bd4ace45cc87d4b0aa"
+      },
+      {
+        "path": "sapi/phpdbg/phpdbg_parser.y",
+        "sha256": "0ac7bf2eb6f3d8241c3cdc390c22da993f301850ab9a7ac7cdeb18530c22d6a2"
+      }
+    ]
+  },
+  {
+    "version": "8.3.36",
+    "devel_pack": {
+      "url": "https://downloads.php.net/~windows/releases/archives/php-devel-pack-8.3.36-Win32-vs16-x64.zip",
+      "sha256": "6d4b58f6baf0e72e3d13fc5d613a01ef6af0a85864df5033c236bbd515668fb5"
+    },
+    "grammars": [
+      {
+        "path": "Zend/zend_language_parser.y",
+        "sha256": "176e20bd96fea48f508b0e1f35d1c6272211823d2fcbb77a4bd289927f756d0e"
+      },
+      {
+        "path": "Zend/zend_ini_parser.y",
+        "sha256": "002ee88b5fe6ca0ad1fcbd9d6d27ef41af2c00cfd5ac20bc6af52b55fc298ea0"
+      },
+      {
+        "path": "ext/json/json_parser.y",
+        "sha256": "9006bff62287ae1106684e516622bbf93d0250e5cd2b948d750fe1633682108c"
+      },
+      {
+        "path": "sapi/phpdbg/phpdbg_parser.y",
+        "sha256": "0ac7bf2eb6f3d8241c3cdc390c22da993f301850ab9a7ac7cdeb18530c22d6a2"
+      }
+    ]
+  },
+  {
+    "version": "8.4.27",
+    "devel_pack": {
+      "url": "https://downloads.php.net/~windows/releases/archives/php-devel-pack-8.4.27-Win32-vs17-x64.zip",
+      "sha256": "c419e9e2b6fcaadc96cc11214c237630c17695c135f1bb9c096f5bc1132a93a2"
+    },
+    "grammars": [
+      {
+        "path": "Zend/zend_language_parser.y",
+        "sha256": "53bf84957214b7d02f62acb8b1f3088c38289377b1a00a0a240ea4f7bb31e5c1"
+      },
+      {
+        "path": "Zend/zend_ini_parser.y",
+        "sha256": "3dbb00d520fe8ff5a810cc5412e7b74a3305f7f38d20f5026041e5915a73a492"
+      },
+      {
+        "path": "ext/json/json_parser.y",
+        "sha256": "9006bff62287ae1106684e516622bbf93d0250e5cd2b948d750fe1633682108c"
+      },
+      {
+        "path": "sapi/phpdbg/phpdbg_parser.y",
+        "sha256": "0ac7bf2eb6f3d8241c3cdc390c22da993f301850ab9a7ac7cdeb18530c22d6a2"
+      }
+    ]
+  },
+  {
+    "version": "8.5.12",
+    "devel_pack": {
+      "url": "https://downloads.php.net/~windows/releases/archives/php-devel-pack-8.5.12-Win32-vs17-x64.zip",
+      "sha256": "82977ddb4cc7173a3e34822e4ceb72d2d942b8d7ed01ce302d1c59b494425aef"
+    },
+    "grammars": [
+      {
+        "path": "Zend/zend_language_parser.y",
+        "sha256": "f108f2c2ff4c98c68b6478e7fbdebc16d8afb8bbbc3ae6079e5b285b448dac0c"
+      },
+      {
+        "path": "Zend/zend_ini_parser.y",
+        "sha256": "3dbb00d520fe8ff5a810cc5412e7b74a3305f7f38d20f5026041e5915a73a492"
+      },
+      {
+        "path": "ext/json/json_parser.y",
+        "sha256": "9006bff62287ae1106684e516622bbf93d0250e5cd2b948d750fe1633682108c"
+      },
+      {
+        "path": "sapi/phpdbg/phpdbg_parser.y",
+        "sha256": "0ac7bf2eb6f3d8241c3cdc390c22da993f301850ab9a7ac7cdeb18530c22d6a2"
+      }
+    ]
+  }
+]
