@@ -1,0 +1,92 @@
+name: Recheck exact libjpeg candidate PHP source tests
+on:
+  push:
+    paths: [source-validation-plan.json]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      include: ${{ steps.plan.outputs.include }}
+    steps:
+      - uses: actions/checkout@v6
+      - id: plan
+        run: echo "include=$(jq -c . source-validation-plan.json)" >> "$GITHUB_OUTPUT"
+  tests:
+    needs: plan
+    name: ${{ matrix.target }} ${{ matrix.arch }} ${{ matrix.ts }} ${{ matrix.opcache }} ${{ matrix.test_type }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.include) }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
+        with:
+          repository: shivammathur/php-windows-builder
+          run-id: ${{ matrix.run_id }}
+          artifact-ids: ${{ matrix.artifact_id }}
+          merge-multiple: true
+          github-token: ${{ github.token }}
+      - name: Verify runtime and configure dependency cache
+        id: cache
+        shell: pwsh
+        env:
+          ROW: ${{ toJSON(matrix) }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $row = $env:ROW | ConvertFrom-Json
+          $actual = (Get-FileHash $row.runtime_name -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $row.runtime_sha256) { throw 'Wrong PHP archive' }
+          $phpVersion = [regex]::Match($row.runtime_name, '^php-(.+?)-(?:nts-)?Win32-v[sc]\d+-').Groups[1].Value
+          Import-Module .\php\BuildPhp -Force
+          $info = Get-DepsCacheInfo -PhpVersion $phpVersion -Arch $row.arch -LibsBuildRuns $row.libs_build_runs -IncludeDefaultRunsKey
+          Set-Content packages.txt ($info.Packages -join "`n")
+          "php-version=$phpVersion" | Add-Content $env:GITHUB_OUTPUT
+          "key=$($info.CacheKey)" | Add-Content $env:GITHUB_OUTPUT
+          "dir=$($info.CacheDir)" | Add-Content $env:GITHUB_OUTPUT
+      - uses: actions/cache@v5
+        id: deps
+        with:
+          path: ${{ steps.cache.outputs.dir }}
+          key: ${{ steps.cache.outputs.key }}-${{ hashFiles('packages.txt') }}
+      - name: Run complete source test configuration
+        shell: pwsh
+        env:
+          ROW: ${{ toJSON(matrix) }}
+          PHP_VERSION: ${{ steps.cache.outputs.php-version }}
+          DEPS_DIR: ${{ steps.cache.outputs.dir }}
+          DEPS_CACHE_HIT: ${{ steps.deps.outputs.cache-hit }}
+          LIBS_BUILD_RUNS: ${{ matrix.libs_build_runs }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $row = $env:ROW | ConvertFrom-Json
+          $workspace = $env:GITHUB_WORKSPACE
+          Import-Module .\php\BuildPhp -Force
+          try {
+            Invoke-PhpTests -PhpVersion $env:PHP_VERSION -Arch $row.arch -Ts $row.ts -Opcache $row.opcache -TestType $row.test_type -SourceRepository php/php-src -SourceRef $row.source_sha -FailOnError
+          } finally {
+            if ($env:TEST_PHP_EXECUTABLE) {
+              $gd = Join-Path (Split-Path $env:TEST_PHP_EXECUTABLE) 'ext\php_gd.dll'
+              $hash = (Get-FileHash $gd -Algorithm SHA256).Hash.ToLowerInvariant()
+              if ($hash -ne $row.gd_sha256) { throw 'Tested GD DLL differs from the accepted candidate' }
+              $row | Add-Member -NotePropertyName tested_gd_sha256 -NotePropertyValue $hash
+              $row | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $workspace 'source-proof.json')
+            }
+          }
+      - name: Preserve test reports and provenance
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: recheck-${{ matrix.target }}-${{ matrix.arch }}-${{ matrix.ts }}-${{ matrix.opcache }}-${{ matrix.test_type }}
+          if-no-files-found: error
+          path: |
+            test-*.xml
+            test-*.log
+            source-proof.json
