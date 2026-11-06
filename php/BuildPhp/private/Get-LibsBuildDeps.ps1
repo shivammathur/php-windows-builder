@@ -58,18 +58,36 @@ function Get-LibsBuildDeps {
 
             Write-Host "Downloading artifact: $($artifact.name)"
             $libName = $artifact.name -replace '-\d.*$', ''
-            $downloadedLibs += $libName
 
             $tempZip = Join-Path $env:TEMP ([System.Guid]::NewGuid().ToString() + '.zip')
 
             try {
                 Write-Host "Downloading from: $($artifact.archive_download_url)"
-                Invoke-WebRequest -Uri $artifact.archive_download_url -Headers $headers -OutFile $tempZip
+                for ($attempt = 1; $attempt -le 3; $attempt++) {
+                    try {
+                        Invoke-WebRequest -Uri $artifact.archive_download_url -Headers $headers -OutFile $tempZip -ErrorAction Stop
+                        if ($artifact.PSObject.Properties.Name -contains 'digest' -and $artifact.digest) {
+                            $digest = 'sha256:' + (Get-FileHash -LiteralPath $tempZip -Algorithm SHA256).Hash.ToLowerInvariant()
+                            if ($digest -ne $artifact.digest) {
+                                throw "Artifact digest mismatch for $($artifact.name)"
+                            }
+                        }
+                        break
+                    } catch {
+                        Remove-Item -LiteralPath $tempZip -Force -ErrorAction SilentlyContinue
+                        if ($attempt -eq 3) {
+                            throw
+                        }
+                        Write-Warning "Retrying artifact download for $($artifact.name) after attempt $attempt of 3"
+                        Start-Sleep -Seconds (2 * $attempt)
+                    }
+                }
                 Write-Host "Downloaded to: $tempZip (Size: $((Get-Item $tempZip).Length) bytes)"
 
                 Write-Host "Extracting to: $Destination"
                 Expand-Archive -LiteralPath $tempZip -DestinationPath $Destination -Force
                 Write-Host "Extracted $($artifact.name) successfully"
+                $downloadedLibs += $libName
             }
             catch {
                 Write-Error "Failed to process artifact $($artifact.name): $_"

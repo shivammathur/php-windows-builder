@@ -175,6 +175,10 @@ function Invoke-PhpTests {
 
         Set-Location "$currentDirectory"
 
+        if (-not (Test-Path $testResultFile)) {
+            throw "PHP test runner did not produce $testResultFile (exit code $testExitCode). See $testLogFile."
+        }
+
         if($FailOnError -and $testExitCode -ne 0) {
             throw "PHP tests failed for $Arch-$Ts-$Opcache-$TestType with exit code $testExitCode"
         }
