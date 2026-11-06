@@ -73,6 +73,21 @@ jobs:
         with:
           path: builder
 
+      - name: Match PHP source warning policy
+        shell: pwsh
+        run: |
+          $header = Get-Content main/php_version.h -Raw
+          $major = [regex]::Match($header, '(?m)^#define PHP_MAJOR_VERSION\s+(\d+)')
+          $minor = [regex]::Match($header, '(?m)^#define PHP_MINOR_VERSION\s+(\d+)')
+          if (!$major.Success -or !$minor.Success) { throw 'Cannot determine PHP source version' }
+          if ($major.Groups[1].Value -eq '8' -and [int]$minor.Groups[1].Value -le 4) {
+            $flags = if ('${{ matrix.arch }}' -eq 'x64') { '/W1 /WX' } else { '/W1' }
+          } else {
+            $flags = '/W3 /WX /wd4018 /wd4146 /wd4244 /wd4267'
+          }
+          # Allow untrained PGO targets to fall back to regular optimization (C4961).
+          "CFLAGS=$flags /wd4961" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       - name: Build
         uses: ./builder/php
         with:
@@ -82,9 +97,6 @@ jobs:
           sbom: ${{ inputs.sbom }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
         env:
-          # Match php-src's MSVC CI warning policy.
-          # Allow untrained PGO targets to fall back to regular optimization (C4961).
-          CFLAGS: "/W3 /WX /wd4018 /wd4146 /wd4244 /wd4267 /wd4961"
           PHP_BUILD_PROVIDER: "The PHP Group"
 
   artifacts:
