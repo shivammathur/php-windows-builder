@@ -10,7 +10,7 @@ on:
         description: 'Branch, tag, or SHA in the php-src repository to source builds and tests from'
         required: true
       libs-build-runs:
-        description: 'Comma-separated list of GitHub Actions run IDs from winlibs/winlib-builder'
+        description: 'Comma-separated run IDs (winlibs/winlib-builder) or owner/repo/run-id references'
         required: false
       sbom:
         type: choice
@@ -50,6 +50,7 @@ jobs:
   php:
     needs: resolve-runner
     strategy:
+      fail-fast: false
       matrix:
         arch: [x64, x86]
         ts: [nts, ts]
@@ -115,6 +116,7 @@ jobs:
   tests:
     needs: [resolve-runner, artifacts]
     strategy:
+      fail-fast: false
       matrix:
         arch: [x64, x86]
         ts: [nts, ts]
@@ -186,6 +188,7 @@ jobs:
 
   smoke-tests:
     strategy:
+      fail-fast: false
       matrix:
         arch: [x64, x86]
         ts: [nts, ts]

@@ -24,7 +24,7 @@ inputs:
     required: false
     default: 'false'
   libs-build-runs:
-    description: Comma-separated list of GitHub Actions run IDs from winlibs/winlib-builder to download artifacts from
+    description: Comma-separated run IDs (winlibs/winlib-builder) or owner/repo/run-id references to download artifacts from
     required: false
   github-token:
     description: GitHub token for accessing private repositories

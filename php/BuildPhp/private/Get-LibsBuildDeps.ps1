@@ -42,7 +42,14 @@ function Get-LibsBuildDeps {
 
     foreach ($runId in $runIds) {
         Write-Host "Processing workflow run: $runId"
-        $url = "https://api.github.com/repos/winlibs/winlib-builder/actions/runs/$runId/artifacts"
+        $repository = 'winlibs/winlib-builder'
+        if ($runId -match '^(?<repository>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/(?<id>\d+)$') {
+            $repository = $Matches.repository
+            $runId = $Matches.id
+        } elseif ($runId -notmatch '^\d+$') {
+            throw "Invalid library workflow run: $runId"
+        }
+        $url = "https://api.github.com/repos/$repository/actions/runs/$runId/artifacts"
         $response = Invoke-RestMethod -Uri $url -Headers $headers -Method Get
 
         if ($response.total_count -eq 0) {
@@ -51,8 +58,8 @@ function Get-LibsBuildDeps {
         }
 
         foreach ($artifact in $response.artifacts) {
-            # Filter by architecture
-            if ($artifact.name -notmatch $Arch) {
+            # Only versioned SDK packages for the requested architecture.
+            if ($artifact.name -notmatch "-\d.*-$Arch`$") {
                 continue
             }
 
