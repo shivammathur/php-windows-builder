@@ -1,0 +1,69 @@
+name: Compare PHP source with Windows toolchains
+on:
+  push:
+    branches: [test/windows-opcache-startup-20261109]
+    paths: [.github/workflows/compare-opcache-toolchains.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - compiler: vs17
+            runner: windows-2022
+          - compiler: vs18
+            runner: windows-2025-vs2026
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    env:
+      SOURCE_SHA: 1f1d646bb2816f08711cb1aa78859484357ed30a
+      DEPS_SERIES: '8.5'
+      DEPS_VS: vs17
+      LIBS_BUILD_RUNS: '42636983792'
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      SBOM: 'false'
+      CFLAGS: /W3 /WX /wd4018 /wd4146 /wd4244 /wd4267 /wd4961
+      PHP_BUILD_PROVIDER: The PHP Group
+    steps:
+      - shell: pwsh
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+      - uses: actions/checkout@v6
+        with:
+          repository: php/php-src
+          ref: ${{ env.SOURCE_SHA }}
+      - uses: actions/checkout@v6
+        with:
+          path: builder
+      - name: Select compiler while holding source and dependencies fixed
+        shell: pwsh
+        run: |
+          $path='builder/php/BuildPhp/config/vs.json'
+          $config=Get-Content $path -Raw | ConvertFrom-Json -AsHashtable
+          $major=[regex]::Match((Get-Content main/php_version.h -Raw), '(?m)^#define PHP_MAJOR_VERSION\s+(\d+)').Groups[1].Value
+          $minor=[regex]::Match((Get-Content main/php_version.h -Raw), '(?m)^#define PHP_MINOR_VERSION\s+(\d+)').Groups[1].Value
+          $config.php["$major.$minor"]='${{ matrix.compiler }}'
+          $config | ConvertTo-Json -Depth 8 | Set-Content $path
+          $path='builder/php/BuildPhp/private/Add-PhpDeps.ps1'
+          $content=Get-Content $path -Raw
+          $content=$content.Replace("        `$downloadedLibs = @()", "        `$PhpVersion = `$env:DEPS_SERIES`n        `$VsVersion = `$env:DEPS_VS`n        `$downloadedLibs = @()")
+          Set-Content $path $content
+          @{sourceSha=$env:SOURCE_SHA;compiler='${{ matrix.compiler }}';depsSeries=$env:DEPS_SERIES;depsVs=$env:DEPS_VS;apacheRun=$env:LIBS_BUILD_RUNS} | ConvertTo-Json | Set-Content comparison.json
+      - name: Build exact source using the standard PGO pipeline
+        shell: pwsh
+        run: |
+          Import-Module ./builder/php/BuildPhp -Force
+          Invoke-PhpBuild -Arch x86 -Ts nts
+          Copy-Item comparison.json artifacts/
+          Get-ChildItem artifacts -Filter '*.zip' | Get-FileHash -Algorithm SHA256 | Select-Object Path,Hash | ConvertTo-Json | Set-Content artifacts/hashes.json
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: compiler-${{ matrix.compiler }}
+          path: artifacts
+          if-no-files-found: error
