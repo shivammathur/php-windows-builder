@@ -171,7 +171,13 @@ function Invoke-PhpTests {
             Remove-Item $testLogFile -Force
         }
 
-        & $buildDirectory\phpbin\php.exe @params 2>&1 | Tee-Object -FilePath $testLogFile | Out-Host
+        if ($env:PHP_TEST_DEBUGGER) {
+            $dumpPath = (Join-Path $currentDirectory 'runner-crash.dmp').Replace('\', '/')
+            $debugCommands = '.symopt+0x410; sxd -c2 ".echo RUNNER_CRASHED; .exr -1; kv; .dump /ma ' + $dumpPath + '; q" 0xc0000409; g'
+            & $env:PHP_TEST_DEBUGGER -hd -G -y $env:PHP_TEST_SYMBOLS -c $debugCommands "$buildDirectory\phpbin\php.exe" @params 2>&1 | Tee-Object -FilePath $testLogFile | Out-Host
+        } else {
+            & $buildDirectory\phpbin\php.exe @params 2>&1 | Tee-Object -FilePath $testLogFile | Out-Host
+        }
         $testExitCode = $LASTEXITCODE
 
         if(Test-Path $testResultFile) {
