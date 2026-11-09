@@ -2,7 +2,7 @@ name: Validate OPcache source artifacts
 on:
   push:
     branches: [test/windows-opcache-startup-20261109]
-    paths: [.github/workflows/validate-opcache-artifacts.yml, validation.json, php/BuildPhp/public/Invoke-PhpTests.ps1]
+    paths: [validation.json]
   workflow_dispatch:
 permissions:
   contents: read
