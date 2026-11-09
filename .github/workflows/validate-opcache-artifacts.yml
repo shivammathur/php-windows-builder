@@ -1,0 +1,102 @@
+name: Validate OPcache source artifacts
+on:
+  push:
+    branches: [test/windows-opcache-startup-20261109]
+    paths: [.github/workflows/validate-opcache-artifacts.yml, validation.json, php/BuildPhp/public/Invoke-PhpTests.ps1]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  config:
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.config.outputs.run }}
+      sourceSha: ${{ steps.config.outputs.sourceSha }}
+      sourceRepo: ${{ steps.config.outputs.sourceRepo }}
+      runner: ${{ steps.config.outputs.runner }}
+      libs: ${{ steps.config.outputs.libs }}
+    steps:
+      - uses: actions/checkout@v6
+      - id: config
+        shell: pwsh
+        run: |
+          $config=Get-Content validation.json -Raw | ConvertFrom-Json -AsHashtable
+          foreach ($entry in $config.GetEnumerator()) { "$($entry.Key)=$($entry.Value)" >> $env:GITHUB_OUTPUT }
+  tests:
+    needs: config
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, x86]
+        ts: [nts, ts]
+        opcache: [opcache, nocache]
+        test-type: [php, ext]
+    runs-on: ${{ needs.config.outputs.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
+        id: artifacts
+        with:
+          name: artifacts
+          run-id: ${{ needs.config.outputs.run }}
+          github-token: ${{ github.token }}
+
+      - name: Get Cache Key
+        id: cache-key
+        shell: pwsh
+        run: |
+          $artifactDirectory = $(pwd).Path
+          $zip = Get-ChildItem -Path $artifactDirectory -Filter "php-*.zip" -File |
+            Where-Object { $_.Name -match "^php-(.+?)-(?:nts-)?Win32-v[sc]\d+-${{ matrix.arch }}\.zip$" } |
+            Select-Object -First 1
+          if ($null -eq $zip) {
+            throw "Unable to determine PHP version from build artifacts in $artifactDirectory"
+          }
+          $phpVersion = [regex]::Match($zip.Name, '^php-(.+?)-(?:nts-)?Win32-v[sc]\d+-').Groups[1].Value
+
+          Import-Module (Join-Path $(pwd).Path '\php\BuildPhp') -Force
+          $cacheInfo = Get-DepsCacheInfo -PhpVersion $phpVersion -Arch '${{ matrix.arch }}' -LibsBuildRuns '${{ needs.config.outputs.libs }}' -IncludeDefaultRunsKey
+          Set-Content -Path packages.txt -Value ($cacheInfo.Packages -join "`n")
+          Add-Content -Value "php-version=$phpVersion" -Path $env:GITHUB_OUTPUT
+          Add-Content -Value "cache-key=$($cacheInfo.CacheKey)" -Path $env:GITHUB_OUTPUT
+          Add-Content -Value "cache-dir=$($cacheInfo.CacheDir)" -Path $env:GITHUB_OUTPUT
+
+      - name: Cache Deps
+        id: cache-deps
+        uses: actions/cache@v5
+        with:
+          path: ${{ steps.cache-key.outputs.cache-dir }}
+          key: ${{ steps.cache-key.outputs.cache-key }}-${{ hashFiles('packages.txt') }}
+
+      - name: Test PHP
+        shell: pwsh
+        env:
+          DEPS_DIR: ${{ steps.cache-key.outputs.cache-dir }}
+          DEPS_CACHE_HIT: ${{ steps.cache-deps.outputs.cache-hit }}
+          LIBS_BUILD_RUNS: ${{ needs.config.outputs.libs }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          Import-Module (Join-Path $(pwd).Path '\php\BuildPhp') -Force
+          Invoke-PhpTests -PhpVersion ${{ steps.cache-key.outputs.php-version }} `
+                          -Arch ${{matrix.arch}} `
+                          -Ts ${{matrix.ts}} `
+                          -Opcache ${{matrix.opcache}} `
+                          -TestType ${{matrix.test-type}} `
+                          -SourceRepository '${{ needs.config.outputs.sourceRepo }}' `
+                          -SourceRef '${{ needs.config.outputs.sourceSha }}' `
+                          -FailOnError
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: test-results-${{matrix.arch}}-${{matrix.ts}}-${{matrix.opcache}}-${{matrix.test-type}}
+          path: |
+            test-${{matrix.arch}}-${{matrix.ts}}-${{matrix.opcache}}-${{matrix.test-type}}.xml
+            test-${{matrix.arch}}-${{matrix.ts}}-${{matrix.opcache}}-${{matrix.test-type}}.log
+          if-no-files-found: error
+

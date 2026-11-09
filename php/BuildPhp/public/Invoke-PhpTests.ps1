@@ -138,9 +138,13 @@ function Invoke-PhpTests {
         )
 
         # A forced -c also reaches -n subprocesses and breaks php_ini_loaded_file tests.
+        $runnerSource = Get-Content $settings.runner -Raw
+        $defaults = [regex]::Match($runnerSource, '(?s)\$ini_overwrites\s*=\s*\[(.*?)\];')
+        if (-not $defaults.Success) { throw 'Cannot locate test runner INI defaults' }
+        $defaultKeys = @([regex]::Matches($defaults.Groups[1].Value, "'([^'=]+)=") | ForEach-Object { $_.Groups[1].Value })
         foreach ($line in Get-Content "$buildDirectory\phpbin\php-test.ini") {
             $line = $line.Trim()
-            if ($line -and -not $line.StartsWith(';')) {
+            if ($line -and -not $line.StartsWith(';') -and ($line -split '=', 2)[0].Trim() -notin $defaultKeys) {
                 $params += @('-d', $line)
             }
         }
