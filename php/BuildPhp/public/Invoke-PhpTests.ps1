@@ -125,7 +125,6 @@ function Invoke-PhpTests {
             $settings.runner,
             "-p", "$buildDirectory\phpbin\php.exe",
             "-n",
-            "-c", "$buildDirectory\phpbin\php-test.ini",
             $settings.progress,
             "-g", "FAIL,BORK,WARN,LEAK",
             "-q",
@@ -137,6 +136,14 @@ function Invoke-PhpTests {
             "--temp-target", $tempDirectory,
             "-r", "$TestType-tests-to-run.txt"
         )
+
+        # A forced -c also reaches -n subprocesses and breaks php_ini_loaded_file tests.
+        foreach ($line in Get-Content "$buildDirectory\phpbin\php-test.ini") {
+            $line = $line.Trim()
+            if ($line -and -not $line.StartsWith(';')) {
+                $params += @('-d', $line)
+            }
+        }
 
         $compatPatchApplied = $true
         if ($null -ne $testSetup) {
