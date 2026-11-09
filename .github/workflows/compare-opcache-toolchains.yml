@@ -1,7 +1,7 @@
-name: Compare PHP source with Windows toolchains
+name: Build and test VS18 on Windows 2022
 on:
   push:
-    branches: [test/windows-opcache-startup-20261109]
+    branches: [test/vs18-on-windows-2022-20261109]
     paths: [.github/workflows/compare-opcache-toolchains.yml]
   workflow_dispatch:
 permissions:
@@ -13,10 +13,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - compiler: vs17
-            runner: windows-2022
           - compiler: vs18
-            runner: windows-2025-vs2026
+            runner: windows-2022
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 180
     env:
@@ -54,6 +52,33 @@ jobs:
           $content=$content.Replace("        `$downloadedLibs = @()", "        `$PhpVersion = `$env:DEPS_SERIES`n        `$VsVersion = `$env:DEPS_VS`n        `$downloadedLibs = @()")
           Set-Content $path $content
           @{sourceSha=$env:SOURCE_SHA;compiler='${{ matrix.compiler }}';depsSeries=$env:DEPS_SERIES;depsVs=$env:DEPS_VS;apacheRun=$env:LIBS_BUILD_RUNS} | ConvertTo-Json | Set-Content comparison.json
+      - name: Install VS18 alongside VS17 on Windows 2022
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $installer=Join-Path $env:RUNNER_TEMP 'vs_buildtools.exe'
+          $channel=[int]('${{ matrix.compiler }}' -replace '\D','')
+          Invoke-WebRequest "https://aka.ms/vs/$channel/stable/vs_buildtools.exe" -OutFile $installer
+          $signature=Get-AuthenticodeSignature $installer
+          if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') { throw 'Invalid Visual Studio installer signature' }
+          $config=Get-Content builder/php/BuildPhp/config/vs.json -Raw | ConvertFrom-Json -AsHashtable
+          $arguments=@('--quiet','--wait','--norestart','--nocache')
+          foreach ($component in $config.vs['${{ matrix.compiler }}'].components) { $arguments+=@('--add',$component) }
+          $process=Start-Process $installer -ArgumentList $arguments -PassThru -Wait
+          if ($process.ExitCode -notin 0,3010) { throw "Visual Studio installation failed: $($process.ExitCode)" }
+          $vswhere=Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $instances=@(& $vswhere -products '*' -format json | ConvertFrom-Json)
+          $installed=@($instances | Where-Object { [int]$_.installationVersion.Split('.')[0] -eq $channel })
+          if ($installed.Count -ne 1) { throw 'The requested Visual Studio installation was not found uniquely' }
+          $compilers=@(Get-ChildItem "$($installed[0].installationPath)/VC/Tools/MSVC/*/bin/Hostx86/x86/cl.exe" | ForEach-Object { @{path=$_.FullName;version=$_.VersionInfo.FileVersion;sha256=(Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()} })
+          if (-not $compilers.Count) { throw 'The x86 compiler was not installed' }
+          $provenance=Get-Content comparison.json -Raw | ConvertFrom-Json -AsHashtable
+          $provenance.buildRunner='${{ matrix.runner }}'
+          $provenance.buildOs=Get-CimInstance Win32_OperatingSystem | Select-Object Caption,Version,BuildNumber
+          $provenance.installedVisualStudio=$instances | Select-Object installationVersion,installationPath,productId
+          $provenance.compilers=$compilers
+          $provenance | ConvertTo-Json -Depth 8 | Set-Content comparison.json
+          Write-Host ($provenance | ConvertTo-Json -Depth 8)
       - name: Build exact source using the standard PGO pipeline
         shell: pwsh
         run: |
@@ -67,3 +92,91 @@ jobs:
           name: compiler-${{ matrix.compiler }}
           path: artifacts
           if-no-files-found: error
+      - name: Checkout Apache validation on its orphan branch
+        uses: actions/checkout@v6
+        with:
+          repository: shivammathur/test-setup-php
+          ref: 49e12cc2dc856b8f262ba99a6f5c7ac54c505629
+          path: qa
+      - name: Prepare the artifacts for testing on the build host
+        shell: pwsh
+        env:
+          BUILD_RUN: ${{ github.run_id }}
+          COMPILER: ${{ matrix.compiler }}
+        run: |
+          Copy-Item artifacts qa/artifacts -Recurse
+          Push-Location qa
+          try { ./scripts/prepare-compiler-manifest.ps1 } finally { Pop-Location }
+      - name: Record test platform
+        shell: pwsh
+        working-directory: qa
+        run: ./scripts/record-platform.ps1
+      - name: Install current Visual C++ runtimes
+        shell: pwsh
+        working-directory: qa
+        run: |
+          foreach ($arch in 'x64', 'x86') {
+            $installer = Join-Path $env:RUNNER_TEMP "vc_redist.$arch.exe"
+            Invoke-WebRequest "https://aka.ms/vc14/vc_redist.$arch.exe" -OutFile $installer
+            $signature = Get-AuthenticodeSignature $installer
+            if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') {
+              throw "Invalid Microsoft runtime signature for $arch"
+            }
+            $process = Start-Process $installer -ArgumentList '/install', '/quiet', '/norestart' -Wait -PassThru
+            if ($process.ExitCode -notin 0, 1638, 3010) { throw "Visual C++ runtime $arch installation failed: $($process.ExitCode)" }
+          }
+      - name: Install checksum-pinned Apache Lounge servers
+        shell: pwsh
+        working-directory: qa
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $manifest = Get-Content manifest.json -Raw | ConvertFrom-Json -AsHashtable
+          New-Item apache -ItemType Directory -Force | Out-Null
+          foreach ($arch in 'x64', 'x86') {
+            $server = $manifest.apache[$arch]
+            $zip = Join-Path $env:RUNNER_TEMP "apache-lounge-$arch.zip"
+            Invoke-WebRequest $server.url -OutFile $zip -UserAgent 'Mozilla/5.0' -Headers @{ Referer='https://www.apachelounge.com/download/' }
+            foreach ($algorithm in 'SHA256', 'SHA512') {
+              if ((Get-FileHash $zip -Algorithm $algorithm).Hash.ToLowerInvariant() -ne $server[$algorithm.ToLowerInvariant()]) {
+                throw "Apache Lounge $arch $algorithm mismatch"
+              }
+            }
+            $extract = Join-Path $env:RUNNER_TEMP "apache-lounge-$arch"
+            Expand-Archive $zip $extract -Force
+            Move-Item (Join-Path $extract $server.rootDirectory) "apache/$arch"
+          }
+      - name: Compare natural Apache behavior
+        shell: pwsh
+        working-directory: qa
+        run: |
+          ./scripts/enable-postmortem.ps1
+          $outcomes=@(foreach ($repeat in 1..15) {
+            try {
+              ./scripts/apache-php.ps1 -Branch comparison -Regressions -Architecture x86 -ThreadSafety nts -CacheModes opcache -ReportDirectory "reports/repeat-$repeat"
+              @{repeat=$repeat;passed=$true}
+            } catch {
+              Write-Host "Repeat $repeat failed: $($_.Exception.Message)"
+              @{repeat=$repeat;passed=$false;error=$_.Exception.Message}
+            }
+            Get-ChildItem dumps -Filter '*.dmp' | Sort-Object LastWriteTime -Descending | Select-Object -Skip 3 | Remove-Item -Force
+          })
+          $outcomes | ConvertTo-Json -Depth 5 | Set-Content reports/comparison.json
+          Write-Host "Natural failures: $(@($outcomes | Where-Object { -not $_.passed }).Count)/$($outcomes.Count)"
+      - name: Analyze captured dumps
+        if: always()
+        shell: pwsh
+        working-directory: qa
+        run: ./scripts/analyze-natural-dumps.ps1 -Branch comparison
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: build-host-apache-${{ matrix.compiler }}-${{ matrix.runner }}
+          path: qa/reports
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: build-host-dumps-${{ matrix.compiler }}-${{ matrix.runner }}
+          path: qa/dumps
+          if-no-files-found: ignore
+          retention-days: 7
