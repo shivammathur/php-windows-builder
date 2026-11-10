@@ -1,0 +1,103 @@
+name: Build OPcache creator-lock comparison
+run-name: OPcache creator-lock ${{ inputs.variant }}
+on:
+  push:
+    branches: [test/windows-opcache-creator-lock-20261110]
+    paths: [.github/workflows/creator-lock-build.yml]
+  workflow_dispatch:
+    inputs:
+      variant:
+        required: true
+      source-ref:
+        required: true
+      compiler:
+        type: choice
+        options: [vs17, vs18]
+        required: true
+      arch:
+        type: choice
+        options: [x86, x64]
+        required: true
+      ts:
+        type: choice
+        options: [nts, ts]
+        required: true
+      deps-series:
+        required: true
+      runner:
+        type: choice
+        options: [windows-2022, windows-2025-vs2026]
+        required: true
+permissions:
+  contents: read
+  actions: read
+jobs:
+  build:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 180
+    env:
+      SOURCE_SHA: ${{ inputs.source-ref }}
+      DEPS_SERIES: ${{ inputs.deps-series }}
+      DEPS_VS: vs17
+      LIBS_BUILD_RUNS: '42636983792'
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      SBOM: 'false'
+      PHP_BUILD_PROVIDER: The PHP Group
+      COMPILER: ${{ inputs.compiler }}
+      BUILD_VARIANT: ${{ inputs.variant }}
+      BUILD_ARCH: ${{ inputs.arch }}
+      BUILD_TS: ${{ inputs.ts }}
+    steps:
+      - shell: pwsh
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+      - uses: actions/checkout@v6
+        with:
+          repository: shivammathur/php-src
+          ref: ${{ env.SOURCE_SHA }}
+      - uses: actions/checkout@v6
+        with:
+          path: builder
+      - name: Pin source, toolchain, and dependencies
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if ((git rev-parse HEAD).Trim() -ne $env:SOURCE_SHA) { throw 'Unexpected source commit' }
+          $header=Get-Content main/php_version.h -Raw
+          $major=[regex]::Match($header,'(?m)^#define PHP_MAJOR_VERSION\s+(\d+)').Groups[1].Value
+          $minor=[regex]::Match($header,'(?m)^#define PHP_MINOR_VERSION\s+(\d+)').Groups[1].Value
+          $series="$major.$minor"
+          $path='builder/php/BuildPhp/config/vs.json'
+          $config=Get-Content $path -Raw | ConvertFrom-Json -AsHashtable
+          $config.php[$series]=$env:COMPILER
+          $config | ConvertTo-Json -Depth 8 | Set-Content $path
+          $path='builder/php/BuildPhp/private/Add-PhpDeps.ps1'
+          $content=Get-Content $path -Raw
+          $anchor='        $downloadedLibs = @()'
+          if (-not $content.Contains($anchor)) { throw 'Dependency override anchor missing' }
+          $content.Replace($anchor,"        `$PhpVersion = `$env:DEPS_SERIES`n        `$VsVersion = `$env:DEPS_VS`n$anchor") | Set-Content $path
+          $flags=if ([version]$series -le [version]'8.4') { if ($env:BUILD_ARCH -eq 'x64') { '/W1 /WX' } else { '/W1' } } else { '/W3 /WX /wd4018 /wd4146 /wd4244 /wd4267' }
+          "CFLAGS=$flags /wd4961" >> $env:GITHUB_ENV
+          $vswhere=Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $instances=@(& $vswhere -products '*' -format json | ConvertFrom-Json)
+          $channel=[int]($env:COMPILER -replace '\D','')
+          $installed=@($instances | Where-Object { [int]$_.installationVersion.Split('.')[0] -eq $channel })
+          if (-not $installed.Count) { throw 'Requested Visual Studio is missing' }
+          $compilers=@($installed | ForEach-Object { Get-ChildItem "$($_.installationPath)/VC/Tools/MSVC/*/bin/Hostx86/$env:BUILD_ARCH/cl.exe" } | ForEach-Object { @{path=$_.FullName;version=$_.VersionInfo.FileVersion;sha256=(Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()} })
+          if (-not $compilers.Count) { throw 'Requested compiler executable is missing' }
+          @{sourceSha=$env:SOURCE_SHA;compiler=$env:COMPILER;variant=$env:BUILD_VARIANT;arch=$env:BUILD_ARCH;ts=$env:BUILD_TS;depsSeries=$env:DEPS_SERIES;depsVs=$env:DEPS_VS;apacheRun=$env:LIBS_BUILD_RUNS;buildRunner='${{ inputs.runner }}';compilers=$compilers;buildOs=(Get-CimInstance Win32_OperatingSystem | Select-Object Caption,Version,BuildNumber)} | ConvertTo-Json -Depth 8 | Set-Content comparison.json
+      - name: Build using the standard PGO pipeline
+        shell: pwsh
+        run: |
+          Import-Module ./builder/php/BuildPhp -Force
+          Invoke-PhpBuild -Arch $env:BUILD_ARCH -Ts $env:BUILD_TS
+          Copy-Item comparison.json artifacts/
+          Get-ChildItem artifacts -Filter '*.zip' | Get-FileHash -Algorithm SHA256 | Select-Object Path,Hash | ConvertTo-Json | Set-Content artifacts/hashes.json
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: build-${{ inputs.variant }}
+          path: artifacts
+          if-no-files-found: error
