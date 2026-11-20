@@ -71,6 +71,7 @@
         'Get-DepsCacheInfo',
         'Get-File',
         'Get-LibsBuildDeps',
+        'Get-OciBuildConfiguration',
         'Get-OciSdk',
         'Get-PhpDepsPackages',
         'Get-PhpBuild',

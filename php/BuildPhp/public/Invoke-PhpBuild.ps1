@@ -74,7 +74,11 @@ function Invoke-PhpBuild {
 
             Set-Location "$buildPath"
             New-Item (Join-Path $buildParent 'obj') -ItemType "directory" -Force > $null 2>&1
-            Copy-Item -Path $configBatch -Destination (Join-Path $buildPath "config.$Ts.bat") -Force
+            $ociArguments = Get-OciBuildConfiguration -PhpVersion $buildVersion.PhpVersion `
+                                                     -SdkDirectory (Join-Path $buildDirectory 'instantclient\sdk')
+            $configContent = Get-Content -LiteralPath $configBatch -Raw
+            $configContent.Replace('%*', (($ociArguments -join ' ') + ' %*')) |
+                Set-Content -LiteralPath (Join-Path $buildPath "config.$Ts.bat") -Encoding ascii
             Add-PhpDeps -PhpVersion $buildVersion.PhpVersion -VsVersion $VsConfig.vs -Arch $Arch -Destination $depsDirectory
 
             $sbomMetadata = Get-PhpSbomMetadata -Sbom $env:SBOM `
