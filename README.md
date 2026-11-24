@@ -48,6 +48,8 @@ Build a specific version of PHP, with the required architecture and thread safet
 - `arch` (required): The architecture to build. It supports values `x64` and `x86`.
 - `ts` (required): The thread safety to build. It supports values `ts` and `nts`.
 
+PHP 5.3 and 5.4 support x86 TS and NTS with VC9. PHP 5.5 and 5.6 use VC11, and PHP 7.0 and 7.1 use VC14, with x86 and x64 builds for both thread modes. These versions build without PGO or SBOM generation. PHP 5.3 through 7.0 use archived dependency bundles and do not accept `libs-build-runs` overrides.
+
 #### Example workflow to build PHP
 
 ```yaml
@@ -370,7 +372,7 @@ To build PHP from a local source, run `Invoke-PhpBuild` from the source director
 Invoke-PhpBuild -Arch x64 -Ts nts
 ```
 
-It should produce the PGO optimized builds for the input PHP version and configuration in a directory named `artifacts` in the current directory.
+The build writes the packages for the selected PHP version and configuration to `artifacts` in the current directory.
 
 ### PHP Extensions
 

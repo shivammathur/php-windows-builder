@@ -1,5 +1,10 @@
 {
   "php": {
+    "5.3": "vc9",
+    "5.4": "vc9",
+    "5.5": "vc11",
+    "5.6": "vc11",
+    "7.0": "vc14",
     "7.1": "vc14",
     "7.2": "vc15",
     "7.3": "vc15",
@@ -13,6 +18,10 @@
     "8.6": "vs18",
     "8.7": "vs18",
     "master": "vs18"
+  },
+  "redistributables": {
+    "vc9": "https://download.microsoft.com/download/5/D/8/5D8C65CB-C849-4025-8E95-C3966CAFD8AE/vcredist_{0}.exe",
+    "vc11": "https://download.microsoft.com/download/1/6/B/16B06F60-3B20-4FF2-B699-5E9B7962F9AE/VSU_4/vcredist_{0}.exe"
   },
   "vs" : {
     "vc14": {

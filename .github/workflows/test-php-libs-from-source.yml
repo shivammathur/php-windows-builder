@@ -14,16 +14,18 @@ on:
         required: false
       sbom:
         type: choice
-        options: ['true', 'false']
+        options: ['auto', 'true', 'false']
         description: Add SBOM files to binary archives
         required: false
-        default: 'true'
+        default: 'auto'
 
 jobs:
   resolve-runner:
     runs-on: ubuntu-latest
     outputs:
       runner: ${{ steps.resolve.outputs.runner }}
+      arches: ${{ steps.resolve.outputs.arches }}
+      major: ${{ steps.resolve.outputs.major }}
       source-sha: ${{ steps.resolve.outputs.source-sha }}
     steps:
       - name: Checkout PHP source
@@ -44,14 +46,20 @@ jobs:
           read -r major minor < <(awk '/^#define PHP_(MAJOR|MINOR)_VERSION/ { v[++i]=$3 } END { print v[1], v[2] }' php-src/main/php_version.h)
           runner="$([ "$major" -gt 8 ] || { [ "$major" -eq 8 ] && [ "$minor" -ge 6 ]; } && echo windows-2025-vs2026 || echo windows-2022)"
           echo "PHP source version: $major.$minor; runner: $runner"
-          echo "runner=$runner" >> "$GITHUB_OUTPUT"
-          echo "source-sha=$(git -C php-src rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          arches='["x64","x86"]'
+          if [[ "$major.$minor" == 5.[34] ]]; then arches='["x86"]'; fi
+          {
+            echo "arches=$arches"
+            echo "major=$major"
+            echo "runner=$runner"
+            echo "source-sha=$(git -C php-src rev-parse HEAD)"
+          } >> "$GITHUB_OUTPUT"
 
   php:
     needs: resolve-runner
     strategy:
       matrix:
-        arch: [x64, x86]
+        arch: ${{ fromJSON(needs.resolve-runner.outputs.arches) }}
         ts: [nts, ts]
     runs-on: ${{ needs.resolve-runner.outputs.runner }}
     steps:
@@ -74,6 +82,7 @@ jobs:
           path: builder
 
       - name: Match PHP source warning policy
+        if: fromJSON(needs.resolve-runner.outputs.major) >= 8
         shell: pwsh
         run: |
           $header = Get-Content main/php_version.h -Raw
@@ -113,10 +122,11 @@ jobs:
           delete-merged: true
 
   tests:
+    if: needs.resolve-runner.outputs.major != '5'
     needs: [resolve-runner, artifacts]
     strategy:
       matrix:
-        arch: [x64, x86]
+        arch: ${{ fromJSON(needs.resolve-runner.outputs.arches) }}
         ts: [nts, ts]
         opcache: [opcache, nocache]
         test-type: [php, ext]
@@ -136,13 +146,14 @@ jobs:
         shell: pwsh
         run: |
           $artifactDirectory = $(pwd).Path
+          $binaryName = [regex]'(?i)^php-(\d.+?)-(?:nts-)?Win32-v[sc]\d+-${{ matrix.arch }}\.zip$'
           $zip = Get-ChildItem -Path $artifactDirectory -Filter "php-*.zip" -File |
-            Where-Object { $_.Name -match "^php-(.+?)-(?:nts-)?Win32-v[sc]\d+-${{ matrix.arch }}\.zip$" } |
+            Where-Object { $binaryName.IsMatch($_.Name) } |
             Select-Object -First 1
           if ($null -eq $zip) {
             throw "Unable to determine PHP version from build artifacts in $artifactDirectory"
           }
-          $phpVersion = [regex]::Match($zip.Name, '^php-(.+?)-(?:nts-)?Win32-v[sc]\d+-').Groups[1].Value
+          $phpVersion = $binaryName.Match($zip.Name).Groups[1].Value
 
           Import-Module (Join-Path $(pwd).Path '\php\BuildPhp') -Force
           $cacheInfo = Get-DepsCacheInfo -PhpVersion $phpVersion -Arch '${{ matrix.arch }}' -LibsBuildRuns '${{ inputs.libs-build-runs }}' -IncludeDefaultRunsKey
@@ -187,7 +198,7 @@ jobs:
   smoke-tests:
     strategy:
       matrix:
-        arch: [x64, x86]
+        arch: ${{ fromJSON(needs.resolve-runner.outputs.arches) }}
         ts: [nts, ts]
     runs-on: ${{ needs.resolve-runner.outputs.runner }}
     needs: [resolve-runner, artifacts]

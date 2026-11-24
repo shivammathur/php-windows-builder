@@ -20,6 +20,15 @@ function Add-VS {
         $vsWhereUrl = 'https://github.com/microsoft/vswhere/releases/latest/download/vswhere.exe'
     }
     process {
+        if ($VsVersion -eq 'vc9') {
+            Add-VC9
+            return
+        }
+        if ($VsVersion -eq 'vc11') {
+            Add-VC11
+            return
+        }
+
         $Config = $VsConfig.vs.$VsVersion
 
         $installerDir = Join-Path "${env:ProgramFiles(x86)}\Microsoft Visual Studio" 'Installer'

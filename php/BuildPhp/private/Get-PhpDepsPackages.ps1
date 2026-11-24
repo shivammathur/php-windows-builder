@@ -38,6 +38,13 @@ function Get-PhpDepsPackages {
             }
         }
 
+        $archives = Get-Content (Join-Path $PSScriptRoot '..\config\deps-archives.json') -Raw | ConvertFrom-Json
+        $archiveDate = $archives.PSObject.Properties[$depsPhpVersion]
+        if ($null -ne $archiveDate) {
+            $archive = "deps-$depsPhpVersion-$VsVersion-$Arch$($archiveDate.Value).7z"
+            return [PSCustomObject]@{ Packages = @($archive); OverrideLibraries = @() }
+        }
+
         $seriesUrl = "$baseurl/series/packages-$depsPhpVersion-$VsVersion-$Arch-staging.txt"
         Write-Host "Fetching series listing: $seriesUrl"
         $series = Get-File -Url $seriesUrl

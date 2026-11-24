@@ -11,16 +11,16 @@ on:
         required: false
       sbom:
         type: choice
-        options: ['true', 'false']
+        options: ['auto', 'true', 'false']
         description: Add SBOM files to binary archives
         required: false
-        default: 'true'
+        default: 'auto'
 
 jobs:
   php:
     strategy:
       matrix:
-        arch: [x64, x86]
+        arch: &arches ${{ fromJSON((startsWith(inputs.php-version, '5.3.') || startsWith(inputs.php-version, '5.4.')) && '["x86"]' || '["x64","x86"]') }}
         ts: [nts, ts]
     runs-on: ${{ (contains(inputs.php-version, 'master') || contains(inputs.php-version, '8.6') || contains(inputs.php-version, '8.7')) && 'windows-2025-vs2026' || 'windows-2022' }}
     steps:
@@ -51,9 +51,10 @@ jobs:
           name: artifacts
           delete-merged: true
   tests:
+    if: ${{ !startsWith(inputs.php-version, '5.') }}
     strategy:
       matrix:
-        arch: [x64, x86]
+        arch: *arches
         ts: [nts, ts]
         opcache: [opcache, nocache]
         test-type: [php, ext]
@@ -112,7 +113,7 @@ jobs:
   smoke-tests:
     strategy:
       matrix:
-        arch: [x64, x86]
+        arch: *arches
         ts: [nts, ts]
     runs-on: ${{ (contains(inputs.php-version, 'master') || contains(inputs.php-version, '8.6') || contains(inputs.php-version, '8.7')) && 'windows-2025-vs2026' || 'windows-2022' }}
     needs: [artifacts]

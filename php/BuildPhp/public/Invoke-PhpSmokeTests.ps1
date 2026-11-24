@@ -62,6 +62,13 @@ function Invoke-PhpSmokeTests {
 
         $zip = $zipMatches[0]
 
+        if ($zip.Name -match '^php-(\d+\.\d+)\.') {
+            $series = [version]$Matches[1]
+            if ($series -lt [version]'7.2') { $requiredPhpModules = $requiredPhpModules -ne 'sodium' }
+            if ($series -lt [version]'7.1') { $requiredPhpModules = $requiredPhpModules -ne 'readline' }
+            if ($series -lt [version]'5.5') { $requiredPhpModules = $requiredPhpModules -ne 'Zend OPcache' }
+        }
+
         $extractPath = Join-Path $tempRoot $zip.BaseName
         New-Item -Path $extractPath -ItemType "directory" -Force > $null 2>&1
 
@@ -74,6 +81,11 @@ function Invoke-PhpSmokeTests {
         $phpExe = Join-Path $extractPath 'php.exe'
         if(-not(Test-Path $phpExe)) {
             throw "php.exe not found in $($zip.Name)"
+        }
+
+        # A clean installation needs the runtime matching the compiler used for PHP 5.
+        if ($zip.Name -match '-(VC9|VC11)-') {
+            Install-VcRedist -VsVersion $Matches[1] -Arch $Arch -Directory $tempRoot
         }
 
         $extDir = Join-Path $extractPath 'ext'
@@ -90,7 +102,7 @@ function Invoke-PhpSmokeTests {
             Sort-Object Name |
             ForEach-Object {
                 if(
-                    $_.Name -in @('php_pdo_firebird.dll', 'php_snmp.dll', 'php_pdo_oci.dll') -or
+                    $_.Name -in @('php_pdo_firebird.dll', 'php_interbase.dll', 'php_sybase_ct.dll', 'php_snmp.dll', 'php_pdo_oci.dll') -or
                     $_.Name -like 'php_oci8*.dll'
                 ) {
                     Write-Host "Skipping $($_.Name) in smoke tests"

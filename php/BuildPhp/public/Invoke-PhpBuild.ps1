@@ -37,10 +37,17 @@ function Invoke-PhpBuild {
             $PhpVersion = Get-SourcePhpVersion
         }
         $buildVersion = Get-PhpBuildVersion -PhpVersion $PhpVersion -BuildNumber $BuildNumber
+        if ($buildVersion.PhpVersion -match '^5\.[34](\.|$)' -and $Arch -ne 'x86') {
+            throw 'PHP 5.3 and 5.4 require x86.'
+        }
         $VsConfig = (Get-VsVersion -PhpVersion $buildVersion.PhpVersion)
         if($null -eq $VsConfig.vs) {
             throw "PHP version $PhpVersion is not supported."
         }
+        $legacy = $VsConfig.vs -in @('vc9', 'vc11', 'vc14')
+        $sbom = $env:SBOM
+        if ($sbom -eq 'auto') { $sbom = (-not $legacy).ToString() }
+        if ($legacy -and $sbom -eq 'true') { throw 'The PHP 5.3-7.1 SDKs do not support SBOM generation.' }
         $currentDirectory = (Get-Location).Path
 
         $tempDirectory = [System.IO.Path]::GetTempPath()
@@ -54,15 +61,17 @@ function Invoke-PhpBuild {
 
             Add-BuildRequirements -PhpVersion $PhpVersion -Arch $Arch -FetchSrc:$fetchSrc
 
-            $configDirectory = Join-Path $PSScriptRoot "..\config\$($VsConfig.vs)\$Arch"
+            $configName = if ($legacy) { 'php' + $PhpVersion.Split('.')[0] } else { "$($VsConfig.vs)\$Arch" }
+            $configDirectory = Join-Path $PSScriptRoot "..\config\$configName"
 
             if($fetchSrc) {
                 Copy-Item -Path $PSScriptRoot\..\config -Destination . -Recurse
-                $buildPath = "$buildDirectory\config\$($VsConfig.vs)\$Arch\php-$PhpVersion"
+                $buildPath = "$buildDirectory\config\$configName\php-$PhpVersion"
                 $sourcePath = "$buildDirectory\php-$PhpVersion-src"
                 Move-Item $sourcePath $buildPath
             } else {
                 $buildPath = $currentDirectory
+                Update-PhpPackagingScript -PhpVersion $buildVersion.PhpVersion -SourceDirectory $buildPath
             }
 
             $configBatch = Join-Path $configDirectory "config.$Ts.bat"
@@ -81,24 +90,37 @@ function Invoke-PhpBuild {
                 Set-Content -LiteralPath (Join-Path $buildPath "config.$Ts.bat") -Encoding ascii
             Add-PhpDeps -PhpVersion $buildVersion.PhpVersion -VsVersion $VsConfig.vs -Arch $Arch -Destination $depsDirectory
 
-            $sbomMetadata = Get-PhpSbomMetadata -Sbom $env:SBOM `
-                                                    -PhpVersion $buildVersion.PhpVersion `
-                                                    -BuildDirectory $buildDirectory
-            $taskTemplate = Join-Path $PSScriptRoot "..\runner\task-$Ts.bat"
-
-            $task = [System.IO.Path]::GetFileName($taskTemplate)
-            Copy-Item -Path $taskTemplate -Destination $task -Force
-
-            Invoke-PhpSdkStarter -BuildDirectory $buildDirectory -VsConfig $VsConfig -Arch $Arch -Task $task
+            $sbomMetadata = Get-PhpSbomMetadata -Sbom $sbom -PhpVersion $buildVersion.PhpVersion -BuildDirectory $buildDirectory
+            if ($legacy) {
+                & "$PSScriptRoot\..\runner\task-legacy.bat" "$buildDirectory\php-sdk" $VsConfig.toolset $Arch "config.$Ts.bat"
+                if ($LASTEXITCODE -ne 0) { throw "Legacy PHP build failed with errorlevel $LASTEXITCODE" }
+            } else {
+                $task = "task-$Ts.bat"
+                Copy-Item "$PSScriptRoot\..\runner\$task" -Destination $task -Force
+                Invoke-PhpSdkStarter -BuildDirectory $buildDirectory -VsConfig $VsConfig -Arch $Arch -Task $task
+            }
 
             $artifacts = if ($Ts -eq "ts") {"..\obj\Release_TS\php-*.zip"} else {"..\obj\Release\php-*.zip"}
             $binaryArtifacts = @(Get-ChildItem -Path $artifacts -File | Where-Object { $_.Name -notmatch '^php-(debug|devel|test)-pack-' })
-            foreach($artifact in $binaryArtifacts) {
-                Add-PhpComplianceFiles -SdkDirectory (Join-Path $buildDirectory 'php-sdk') `
-                                       -SourceDirectory $buildPath `
-                                       -DepsDirectory $depsDirectory `
-                                       -Artifact $artifact.FullName `
-                                       -SbomMetadata $sbomMetadata
+            if ($legacy) {
+                # Historical snap makefiles ignore ZIP command failures.
+                if ($binaryArtifacts.Count -ne 1) { throw "Expected one PHP binary archive in $artifacts" }
+                $binary = $binaryArtifacts[0]
+                $suffix = $binary.Name.Substring(4)
+                $testPack = $binary.Name -replace '^php-(.+?)(?:-nts)?-Win32-vc\d+-(?:x86|x64)\.zip$', 'php-test-pack-$1.zip'
+                foreach ($pack in @("php-debug-pack-$suffix", "php-devel-pack-$suffix", $testPack)) {
+                    if (-not (Test-Path -LiteralPath (Join-Path $binary.DirectoryName $pack) -PathType Leaf)) {
+                        throw "Missing PHP build artifact: $pack"
+                    }
+                }
+            } else {
+                foreach($artifact in $binaryArtifacts) {
+                    Add-PhpComplianceFiles -SdkDirectory (Join-Path $buildDirectory 'php-sdk') `
+                                           -SourceDirectory $buildPath `
+                                           -DepsDirectory $depsDirectory `
+                                           -Artifact $artifact.FullName `
+                                           -SbomMetadata $sbomMetadata
+                }
             }
 
             New-Item "$artifactsDirectory" -ItemType "directory" -Force > $null 2>&1

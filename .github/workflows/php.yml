@@ -18,10 +18,10 @@ on:
         default: 'true'
       sbom:
         type: choice
-        options: ['true', 'false']
+        options: ['auto', 'true', 'false']
         description: Add SBOM files to binary archives
         required: false
-        default: 'true'
+        default: 'auto'
 
 jobs:
   php:
@@ -29,7 +29,7 @@ jobs:
       php-version: ${{ steps.build.outputs.php-version }}
     strategy:
       matrix:
-        arch: [x64, x86]
+        arch: &arches ${{ fromJSON((startsWith(inputs.php-version, '5.3.') || startsWith(inputs.php-version, '5.4.')) && '["x86"]' || '["x64","x86"]') }}
         ts: [nts, ts]
     runs-on: ${{ (contains(inputs.php-version, 'master') || contains(inputs.php-version, '8.6') || contains(inputs.php-version, '8.7')) && 'windows-2025-vs2026' || 'windows-2022' }}
     steps:
@@ -61,9 +61,10 @@ jobs:
           name: artifacts
           delete-merged: true
   tests:
+    if: ${{ !startsWith(inputs.php-version, '5.') }}
     strategy:
       matrix:
-        arch: [x64, x86]
+        arch: *arches
         ts: [nts, ts]
         opcache: [opcache, nocache]
         test-type: [php, ext]
@@ -81,17 +82,15 @@ jobs:
 
       - name: Get Cache Key
         id: cache-key
+        env:
+          PHP_VERSION: ${{ inputs.php-version }}
         shell: pwsh
         run: |
-          $pv = '${{inputs.php-version}}'
-          if('${{inputs.php-version}}' -ne 'master') {
-            $pv = '${{inputs.php-version}}'.Split('.')[0..1] -join '.'
-          }
-          $vsVersion = (Get-Content -Raw -Path (Join-Path $(pwd).Path '\php\BuildPhp\config\vs.json') | ConvertFrom-Json).php.$pv
-          $packagesListUrl = "https://downloads.php.net/~windows/php-sdk/deps/series/packages-$pv-$vsVersion-${{ matrix.arch }}-staging.txt"
-          Invoke-WebRequest -OutFile packages.txt -Uri $packagesListUrl
-          Add-Content -Value "cache-key=deps-$pv-${{ matrix.arch }}" -Path $env:GITHUB_OUTPUT
-          Add-Content -Value "cache-dir=C:\deps-$pv-${{ matrix.arch }}" -Path $env:GITHUB_OUTPUT
+          Import-Module ./php/BuildPhp -Force
+          $deps = Get-DepsCacheInfo -PhpVersion $env:PHP_VERSION -Arch '${{ matrix.arch }}'
+          Set-Content packages.txt $deps.Packages
+          "cache-key=$($deps.CacheKey)" >> $env:GITHUB_OUTPUT
+          "cache-dir=$($deps.CacheDir)" >> $env:GITHUB_OUTPUT
 
       - name: Cache Deps
         id: cache-deps
@@ -125,7 +124,7 @@ jobs:
   smoke-tests:
     strategy:
       matrix:
-        arch: [x64, x86]
+        arch: *arches
         ts: [nts, ts]
     runs-on: ${{ (contains(inputs.php-version, 'master') || contains(inputs.php-version, '8.6') || contains(inputs.php-version, '8.7')) && 'windows-2025-vs2026' || 'windows-2022' }}
     needs: [artifacts]

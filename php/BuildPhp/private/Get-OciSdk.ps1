@@ -9,11 +9,15 @@ function Get-OciSdk {
     [OutputType()]
     param (
         [Parameter(Mandatory = $true, Position = 0, HelpMessage = 'The architecture of the OCI sdk.')]
-        [string]$Arch
+        [ValidateSet('x86', 'x64')]
+        [string]$Arch,
+        [string]$PhpVersion = ''
     )
     begin {
-        $suffix = if ($Arch -eq 'x86') { 'nt' } else { 'windows' }
-        $url = "https://download.oracle.com/otn_software/nt/instantclient/instantclient-sdk-$suffix.zip"
+        $config = Get-Content (Join-Path $PSScriptRoot '..\config\oci.json') -Raw | ConvertFrom-Json
+        $series = [regex]::Match($PhpVersion, '^\d+\.\d+').Value
+        $sdk = if ($config.sdk.legacy.series -contains $series) { $config.sdk.legacy } else { $config.sdk.default }
+        $url = $config.sdk.baseUrl + $sdk.$Arch
     }
     process {
         Get-File -Url $url -OutFile "instantclient-sdk.zip"

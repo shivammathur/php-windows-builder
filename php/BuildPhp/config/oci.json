@@ -1,10 +1,19 @@
-[
-  "7.1",
-  "7.2",
-  "7.3",
-  "7.4",
-  "8.0",
-  "8.1",
-  "8.2",
-  "8.3"
-]
+{
+  "extensions": [
+    {"series": ["5.3", "5.4", "5.5"], "names": ["pdo-oci", "oci8", "oci8-11g"]},
+    {"series": ["5.6", "7.0", "7.1", "7.2", "7.3", "7.4"], "names": ["pdo-oci", "oci8-12c"]},
+    {"series": ["8.0", "8.1", "8.2", "8.3"], "names": ["pdo-oci", "oci8-19"]}
+  ],
+  "sdk": {
+    "baseUrl": "https://download.oracle.com/otn_software/nt/instantclient/",
+    "legacy": {
+      "series": ["5.3", "5.4", "5.5", "5.6", "7.0", "7.1"],
+      "x86": "1932000/instantclient-sdk-nt-19.32.0.0.0dbru.zip",
+      "x64": "1932000/instantclient-sdk-windows.x64-19.32.0.0.0dbru.zip"
+    },
+    "default": {
+      "x86": "instantclient-sdk-nt.zip",
+      "x64": "instantclient-sdk-windows.zip"
+    }
+  }
+}

@@ -28,7 +28,7 @@ function Add-PhpDeps {
     )
 
     begin {
-        $baseurl = 'https://downloads.php.net/~windows/php-sdk/deps'
+        $baseurl = 'https://downloads.php.net/~windows/php-sdk'
     }
 
     process {
@@ -36,13 +36,30 @@ function Add-PhpDeps {
             New-Item -ItemType Directory -Force -Path $Destination | Out-Null
         }
 
+        $packageData = Get-PhpDepsPackages -PhpVersion $PhpVersion -VsVersion $VsVersion -Arch $Arch
+        $lines = @($packageData.Packages)
+        if ($lines.Count -eq 1 -and $lines[0].EndsWith('.7z')) {
+            if ($env:LIBS_BUILD_RUNS) {
+                throw 'Library build overrides are unavailable for archived dependency bundles.'
+            }
+            $temp = New-Item -ItemType Directory -Path (Join-Path $env:TEMP ([guid]::NewGuid()))
+            try {
+                $archive = Join-Path $temp.FullName $lines[0]
+                Get-File -Url "$baseurl/archives/$($lines[0])" -OutFile $archive
+                & 7z x $archive "-o$($temp.FullName)" -y | Out-Host
+                if ($LASTEXITCODE -ne 0) { throw "Could not extract $($lines[0])" }
+                Copy-Item "$($temp.FullName)\deps\*" $Destination -Recurse -Force
+            } finally {
+                Remove-Item -LiteralPath $temp.FullName -Recurse -Force
+            }
+            return
+        }
+
         $downloadedLibs = @()
         if ($env:LIBS_BUILD_RUNS) {
             $downloadedLibs = Get-LibsBuildDeps -Arch $Arch -Destination $Destination
         }
 
-        $packageData = Get-PhpDepsPackages -PhpVersion $PhpVersion -VsVersion $VsVersion -Arch $Arch
-        $lines = @($packageData.Packages)
         if ($packageData.OverrideLibraries.Count -ne 0) {
             $downloadedLibs = @($downloadedLibs | Where-Object { $packageData.OverrideLibraries -notcontains $_ })
         }
@@ -58,7 +75,7 @@ function Add-PhpDeps {
 
             Write-Host "Processing package $line"
             $temp = New-TemporaryFile | Rename-Item -NewName { $_.Name + '.zip' } -PassThru
-            $url = "$baseurl/$VsVersion/$Arch/$line"
+            $url = "$baseurl/deps/$VsVersion/$Arch/$line"
             Get-File -Url $url -OutFile $temp.FullName
             try {
                 Expand-Archive -LiteralPath $temp.FullName -DestinationPath $Destination -Force

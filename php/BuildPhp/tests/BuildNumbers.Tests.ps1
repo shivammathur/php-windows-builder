@@ -36,7 +36,7 @@ Describe 'PHP build versions' {
     It 'uses the base PHP version for historical dependency overrides' {
         Mock Get-File { [PSCustomObject]@{ Content = 'zlib-1.3.2-vs17-x64.zip' } }
         Mock Test-Path { $true }
-        Mock Get-Content { '{"8.5":{"maxVersion":"8.5.12","libraries":{"zlib":"1.3.1"}}}' }
+        Mock Get-Content { '{"8.5":{"maxVersion":"8.5.12","libraries":{"zlib":"1.3.1"}}}' } -ParameterFilter { $LiteralPath -like '*deps-overrides.json' }
         $packages = Get-PhpDepsPackages -PhpVersion '8.5.12-1' -VsVersion vs17 -Arch x64
         $packages.Packages | Should -Contain 'zlib-1.3.1-vs17-x64.zip'
         Assert-MockCalled Get-File -Times 1 -Exactly -ParameterFilter { $Url -like '*/packages-8.5-vs17-x64-staging.txt' }
