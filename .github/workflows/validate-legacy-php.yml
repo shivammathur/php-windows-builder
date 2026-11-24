@@ -1,0 +1,130 @@
+name: Validate legacy PHP Windows builds
+on:
+  push:
+    branches: [test/legacy-php-support]
+permissions:
+  contents: read
+jobs:
+  packages:
+    name: PHP ${{ matrix.version }} ${{ matrix.arch }} ${{ matrix.ts }}
+    runs-on: windows-2022
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {version: '5.3.29', arch: x86, ts: nts}
+          - {version: '5.4.45', arch: x86, ts: ts}
+          - {version: '5.5.38', arch: x64, ts: nts}
+          - {version: '5.6.40', arch: x86, ts: ts}
+          - {version: '7.0.33', arch: x64, ts: nts}
+          - {version: '7.1.33', arch: x86, ts: ts}
+          - {version: '7.2.34', arch: x64, ts: nts}
+          - {version: '7.4.33', arch: x86, ts: ts}
+          - {version: '8.1.34', arch: x64, ts: ts}
+          - {version: '8.2.30', arch: x64, ts: nts}
+    steps:
+      - if: matrix.ts == 'ts'
+        uses: actions/checkout@v6
+        with:
+          repository: php/php-src
+          ref: php-${{ matrix.version }}
+          persist-credentials: false
+      - uses: actions/checkout@v6
+        with:
+          ref: 8b4d1274f4aef8d7c88315f3f7e173596d4ebc81
+          path: builder
+          persist-credentials: false
+      - uses: ./builder/php
+        with:
+          php-version: ${{ matrix.ts == 'nts' && matrix.version || '' }}
+          arch: ${{ matrix.arch }}
+          ts: ${{ matrix.ts }}
+          sbom: auto
+      - name: Inspect generated packages
+        shell: pwsh
+        env:
+          V: ${{ matrix.version }}
+          ARCH: ${{ matrix.arch }}
+          TS: ${{ matrix.ts }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $prefix = "php-$env:V"
+          $binary = @(Get-ChildItem artifacts/*.zip | Where-Object { $_.Name -match "^$([regex]::Escape($prefix))-(?:nts-)?Win32-v[sc]\d+-$env:ARCH\.zip$" })
+          if ($binary.Count -ne 1) { throw 'Expected one binary ZIP' }
+          $suffix = $binary[0].Name.Substring(4)
+          $major = $env:V.Split('.')[0]
+          $core = "php$major" + $(if ($env:TS -eq 'ts') { 'ts' })
+          function Assert-Zip($path, $names) {
+              $zip = [IO.Compression.ZipFile]::OpenRead((Resolve-Path $path))
+              try {
+                  foreach ($name in $names) {
+                      if ($zip.Entries.Name -notcontains $name) { throw "$path is missing $name" }
+                  }
+                  Write-Host ("{0}  {1} entries  SHA256 {2}" -f $path,$zip.Entries.Count,(Get-FileHash $path).Hash)
+              } finally { $zip.Dispose() }
+          }
+          Assert-Zip $binary[0].FullName @('php.exe', 'php-cgi.exe', "$core.dll", 'php_pdo_oci.dll')
+          Assert-Zip "artifacts/php-devel-pack-$suffix" @('php_version.h', "$core.lib")
+          Assert-Zip "artifacts/php-debug-pack-$suffix" @('php.pdb', "$core.pdb")
+          $testPack = "artifacts/php-test-pack-$env:V.zip"
+          $tests = [IO.Compression.ZipFile]::OpenRead((Resolve-Path $testPack))
+          try {
+              if (!($tests.Entries.Name | Where-Object { $_ -in 'run-test.php','run-tests.php' } | Select-Object -First 1)) { throw "Missing test runner in $testPack" }
+          } finally { $tests.Dispose() }
+          if ($env:TS -eq 'nts') { Assert-Zip "artifacts/php-$env:V-src.zip" @('php_version.h', 'mkdist.php') }
+          Expand-Archive $binary[0].FullName -DestinationPath check-php
+          $exe = (Resolve-Path 'check-php/php.exe').Path
+          $bytes = [IO.File]::ReadAllBytes($exe)
+          $machine = [BitConverter]::ToUInt16($bytes, [BitConverter]::ToInt32($bytes, 0x3c) + 4)
+          $target = if ($env:ARCH -eq 'x64') { 0x8664 } else { 0x014c }
+          if ($machine -ne $target) { throw "Wrong PE architecture $machine" }
+          $zts = if ($env:TS -eq 'ts') { '1' } else { '0' }
+          $identity = & $exe -n -r 'echo PHP_VERSION, " ", (int) PHP_ZTS;'
+          if ($LASTEXITCODE -or $identity -ne "$env:V $zts") { throw "Unexpected runtime identity: $identity" }
+          Import-Module ./builder/php/BuildPhp -Force
+          Invoke-PhpSmokeTests -ArtifactsDirectory (Resolve-Path artifacts) -Arch $env:ARCH -Ts $env:TS
+  atl:
+    name: v141 ATL on master (${{ matrix.module }})
+    runs-on: windows-2022
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {module: php/BuildPhp, arch: x64}
+          - {module: extension/BuildPhpExtension, arch: x86}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: a695d5f9b6e5d87b668ec023f6ec6af21d05e81e
+          persist-credentials: false
+      - name: Install v141 and compile an ATL executable
+        shell: pwsh
+        env:
+          MODULE: ${{ matrix.module }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Import-Module "./$env:MODULE" -Force
+          $config = Get-Content "$env:MODULE/config/vs.json" -Raw | ConvertFrom-Json
+          Add-VS -VsVersion $config.php.'7.4' -VsConfig $config
+          $where = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $where -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.v141.ATL -property installationPath
+          if (!$vs) { throw 'v141 ATL is missing from the installed component catalog' }
+          @'
+          #include <atlbase.h>
+          #if _MSC_VER < 1910 || _MSC_VER >= 1920
+          #error Expected v141
+          #endif
+          int main() { ATL::CComBSTR s(L"ATL"); return s.Length() == 3 ? 0 : 1; }
+          '@ | Set-Content atl.cpp -Encoding ascii
+          @"
+          @echo off
+          call "$vs\VC\Auxiliary\Build\vcvarsall.bat" $env:ARCH -vcvars_ver=14.1 || exit /b 1
+          cl /nologo /EHsc atl.cpp oleaut32.lib || exit /b 1
+          atl.exe
+          exit /b %errorlevel%
+          "@ | Set-Content atl-check.cmd -Encoding ascii
+          & .\atl-check.cmd
+          if ($LASTEXITCODE) { throw "ATL compile or runtime failed: $LASTEXITCODE" }
